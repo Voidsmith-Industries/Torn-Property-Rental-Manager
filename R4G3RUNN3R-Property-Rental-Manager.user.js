@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         R4G3RUNN3R Property Rental Manager
 // @namespace    https://voidsmithindustries.com/torn/
-// @version      0.4.2
-// @description  Manage Torn rentals with truthful property/market timestamps, cache-aware cancellable scans, live diagnostics, and safe native actions.
+// @version      1.0.0
+// @description  Manage Torn rentals with attention queues, transparent market pricing, local lease history/backups, and safe native actions.
 // @author       R4G3RUNN3R
 // @license      MIT
 // @icon         data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22%2311170d%22%2F%3E%3Cpath%20d%3D%22M13%2030L32%2015l19%2015v20a4%204%200%200%201-4%204H17a4%204%200%200%201-4-4V30Z%22%20fill%3D%22%23f3f7ee%22%2F%3E%3Cpath%20d%3D%22M25%2054V39h14v15%22%20fill%3D%22%23d9ff52%22%2F%3E%3Cpath%20d%3D%22M10%2031L32%2013l22%2018%22%20fill%3D%22none%22%20stroke%3D%22%23d9ff52%22%20stroke-width%3D%225%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E
@@ -139,6 +139,12 @@
     return `https://www.torn.com/properties.php#/p=options&ID=${id}&tab=lease`;
   }
 
+  function extensionUrl(propertyId) {
+    const id = asPositiveInt(propertyId);
+    if (!id) throw new TypeError('A positive property ID is required');
+    return `https://www.torn.com/properties.php#/p=options&ID=${id}&tab=offerExtension`;
+  }
+
   function uniquePropertyTypeIds(properties) {
     if (!Array.isArray(properties)) return [];
     return [...new Set(properties
@@ -155,6 +161,7 @@
     normalizeProperties,
     isEligibleForLease,
     leaseUrl,
+    extensionUrl,
     uniquePropertyTypeIds
   });
 }));
@@ -2000,6 +2007,877 @@
     createHub,
     createWindowProxy
   });
+}));
+
+/* ===== src/portfolio-core.js ===== */
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  if (root) root.R4G3PortfolioCore = api;
+}(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  const HISTORY_KEY = 'r4g3_property_rental_manager.v1.lease_history';
+  const HISTORY_VERSION = 1;
+  const MAX_PREVIOUS_LEASES = 8;
+  const ATTENTION_FILTERS = Object.freeze([
+    'all', 'attention', 'vacant', 'listed', 'rented', 'extension', 'active'
+  ]);
+
+  function integer(value, fallback = 0) {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) ? parsed : fallback;
+  }
+
+  function nonNegativeNumber(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  }
+
+  function text(value) {
+    return String(value == null ? '' : value).trim();
+  }
+
+  function normalizeStatus(value) {
+    return text(value).toLowerCase();
+  }
+
+  function normalizePerson(value) {
+    if (!value || typeof value !== 'object') return null;
+    const id = integer(value.id, 0);
+    const name = text(value.name);
+    if (id <= 0 && !name) return null;
+    return Object.freeze({ id: id > 0 ? id : null, name });
+  }
+
+  function normalizeExtension(value) {
+    if (!value || typeof value !== 'object') return null;
+    const status = text(value.status).toLowerCase();
+    const cost = nonNegativeNumber(value.cost);
+    const period = nonNegativeNumber(value.period != null ? value.period : value.rental_period);
+    const createdAt = nonNegativeNumber(value.created_at != null ? value.created_at : value.createdAt);
+    return { status, cost, period, createdAt };
+  }
+
+  function hasExtensionOffer(property) {
+    return Boolean(normalizeExtension(property && property.leaseExtension));
+  }
+
+  function extensionLabel(property) {
+    const extension = normalizeExtension(property && property.leaseExtension);
+    if (!extension) return 'Not offered';
+    if (extension.status === 'pending') return 'Pending';
+    if (extension.status === 'accepted') return 'Accepted';
+    if (extension.status === 'declined') return 'Declined';
+    return 'Offered';
+  }
+
+  function attentionStatus(property) {
+    const status = normalizeStatus(property && property.status);
+    if (status === 'none') return 'vacant';
+    if (status === 'for_rent') return 'listed';
+    if (status !== 'rented') return 'other';
+
+    const remaining = nonNegativeNumber(property && property.rentalPeriodRemaining);
+    if (remaining == null) return hasExtensionOffer(property) ? 'extension' : 'rented';
+    if (remaining <= 3) return 'urgent';
+    if (remaining <= 7) return 'expiring';
+    if (remaining <= 14) return 'due_soon';
+    return hasExtensionOffer(property) ? 'extension' : 'active';
+  }
+
+  function needsAttention(property) {
+    const status = attentionStatus(property);
+    return status === 'vacant' || status === 'urgent' || status === 'expiring' || status === 'due_soon';
+  }
+
+  function summary(properties) {
+    const result = {
+      total: 0,
+      vacant: 0,
+      listed: 0,
+      rented: 0,
+      urgent: 0,
+      expiring: 0,
+      dueSoon: 0,
+      extension: 0,
+      active: 0,
+      attention: 0
+    };
+    for (const property of Array.isArray(properties) ? properties : []) {
+      result.total += 1;
+      const status = normalizeStatus(property && property.status);
+      const band = attentionStatus(property);
+      if (status === 'rented') result.rented += 1;
+      if (band === 'vacant') result.vacant += 1;
+      else if (band === 'listed') result.listed += 1;
+      else if (band === 'urgent') result.urgent += 1;
+      else if (band === 'expiring') result.expiring += 1;
+      else if (band === 'due_soon') result.dueSoon += 1;
+      else if (band === 'active') result.active += 1;
+      if (hasExtensionOffer(property)) result.extension += 1;
+      if (needsAttention(property)) result.attention += 1;
+    }
+    return result;
+  }
+
+  function searchableText(property) {
+    const renter = normalizePerson(property && property.rentedBy);
+    return [
+      property && property.name,
+      property && property.id,
+      property && property.propertyTypeId,
+      renter && renter.name,
+      renter && renter.id
+    ].map(text).filter(Boolean).join(' ').toLowerCase();
+  }
+
+  function matchesSearch(property, query) {
+    const normalized = text(query).toLowerCase();
+    return !normalized || searchableText(property).includes(normalized);
+  }
+
+  function matchesFilter(property, filter) {
+    const selected = ATTENTION_FILTERS.includes(filter) ? filter : 'all';
+    if (selected === 'all') return true;
+    const status = normalizeStatus(property && property.status);
+    const band = attentionStatus(property);
+    if (selected === 'attention') return needsAttention(property);
+    if (selected === 'vacant') return band === 'vacant';
+    if (selected === 'listed') return band === 'listed';
+    if (selected === 'rented') return status === 'rented';
+    if (selected === 'extension') return hasExtensionOffer(property);
+    if (selected === 'active') return status === 'rented' && !needsAttention(property);
+    return true;
+  }
+
+  function percentile(sortedValues, p) {
+    if (!sortedValues.length) return null;
+    if (sortedValues.length === 1) return sortedValues[0];
+    const index = (sortedValues.length - 1) * p;
+    const lower = Math.floor(index);
+    const upper = Math.ceil(index);
+    if (lower === upper) return sortedValues[lower];
+    const weight = index - lower;
+    return sortedValues[lower] * (1 - weight) + sortedValues[upper] * weight;
+  }
+
+  function marketDistribution(quote) {
+    const targetDays = Math.max(1, Number(quote && quote.targetDays) || 100);
+    const rows = quote && Array.isArray(quote.trustedMatches) ? quote.trustedMatches : [];
+    const totals = rows
+      .map(row => Number(row && row.equivalentTotal))
+      .filter(value => Number.isFinite(value) && value > 0)
+      .sort((a, b) => a - b);
+    if (!totals.length) return null;
+    const average = totals.reduce((sum, value) => sum + value, 0) / totals.length;
+    const total = value => value == null ? null : Math.floor(value);
+    const daily = value => value == null ? null : Math.floor(value / targetDays);
+    const q1 = percentile(totals, 0.25);
+    const median = percentile(totals, 0.50);
+    const q3 = percentile(totals, 0.75);
+    const proposedTotal = Number(quote && quote.proposedTotal);
+    return {
+      targetDays,
+      lowestTotal: total(totals[0]),
+      q1Total: total(q1),
+      medianTotal: total(median),
+      averageTotal: total(average),
+      q3Total: total(q3),
+      highestTotal: total(totals[totals.length - 1]),
+      q1Daily: daily(q1),
+      medianDaily: daily(median),
+      q3Daily: daily(q3),
+      proposedDaily: Number.isFinite(proposedTotal) ? daily(proposedTotal) : null
+    };
+  }
+
+  function leaseObservation(property, now) {
+    if (normalizeStatus(property && property.status) !== 'rented') return null;
+    const renter = normalizePerson(property && property.rentedBy);
+    return {
+      tenantId: renter && renter.id || null,
+      tenantName: renter && renter.name || '',
+      cost: nonNegativeNumber(property && property.cost),
+      costPerDay: nonNegativeNumber(property && property.costPerDay),
+      rentalPeriod: nonNegativeNumber(property && property.rentalPeriod),
+      rentalPeriodRemaining: nonNegativeNumber(property && property.rentalPeriodRemaining),
+      firstSeenAt: integer(now, Date.now()),
+      lastSeenAt: integer(now, Date.now())
+    };
+  }
+
+  function leaseFingerprint(observation) {
+    if (!observation) return '';
+    return [
+      observation.tenantId || '',
+      text(observation.tenantName).toLowerCase(),
+      observation.cost == null ? '' : observation.cost,
+      observation.costPerDay == null ? '' : observation.costPerDay,
+      observation.rentalPeriod == null ? '' : observation.rentalPeriod
+    ].join('|');
+  }
+
+  function normalizeObservation(value) {
+    if (!value || typeof value !== 'object') return null;
+    return {
+      tenantId: integer(value.tenantId, 0) || null,
+      tenantName: text(value.tenantName),
+      cost: nonNegativeNumber(value.cost),
+      costPerDay: nonNegativeNumber(value.costPerDay),
+      rentalPeriod: nonNegativeNumber(value.rentalPeriod),
+      rentalPeriodRemaining: nonNegativeNumber(value.rentalPeriodRemaining),
+      firstSeenAt: integer(value.firstSeenAt, 0),
+      lastSeenAt: integer(value.lastSeenAt, 0),
+      endedSeenAt: integer(value.endedSeenAt, 0) || null
+    };
+  }
+
+  function normalizeHistory(value) {
+    const source = value && typeof value === 'object' ? value : {};
+    const properties = {};
+    const rawProperties = source.properties && typeof source.properties === 'object' ? source.properties : {};
+    for (const [key, raw] of Object.entries(rawProperties)) {
+      const propertyId = integer(key, 0);
+      if (propertyId <= 0 || !raw || typeof raw !== 'object') continue;
+      const current = normalizeObservation(raw.current);
+      const previous = (Array.isArray(raw.previous) ? raw.previous : [])
+        .map(normalizeObservation)
+        .filter(Boolean)
+        .slice(0, MAX_PREVIOUS_LEASES);
+      properties[String(propertyId)] = { current, previous };
+    }
+    return { version: HISTORY_VERSION, properties };
+  }
+
+  function loadHistory(storage) {
+    if (!storage || typeof storage.getItem !== 'function') return normalizeHistory({});
+    try {
+      const raw = storage.getItem(HISTORY_KEY);
+      return normalizeHistory(raw ? JSON.parse(raw) : {});
+    } catch (error) {
+      return normalizeHistory({});
+    }
+  }
+
+  function saveHistory(storage, history) {
+    const normalized = normalizeHistory(history);
+    if (storage && typeof storage.setItem === 'function') {
+      try { storage.setItem(HISTORY_KEY, JSON.stringify(normalized)); } catch (error) { }
+    }
+    return normalized;
+  }
+
+  function recordProperties(historyValue, properties, nowValue) {
+    const now = integer(nowValue, Date.now());
+    const history = normalizeHistory(historyValue);
+
+    for (const property of Array.isArray(properties) ? properties : []) {
+      const propertyId = integer(property && property.id, 0);
+      if (propertyId <= 0) continue;
+      const key = String(propertyId);
+      const entry = history.properties[key] || { current: null, previous: [] };
+      const observed = leaseObservation(property, now);
+
+      if (!observed) {
+        if (entry.current) {
+          entry.current.endedSeenAt = now;
+          entry.previous = [entry.current, ...entry.previous].slice(0, MAX_PREVIOUS_LEASES);
+          entry.current = null;
+        }
+        history.properties[key] = entry;
+        continue;
+      }
+
+      if (!entry.current) {
+        entry.current = observed;
+      } else if (leaseFingerprint(entry.current) !== leaseFingerprint(observed)) {
+        entry.current.endedSeenAt = now;
+        entry.previous = [entry.current, ...entry.previous].slice(0, MAX_PREVIOUS_LEASES);
+        entry.current = observed;
+      } else {
+        entry.current = Object.assign({}, entry.current, {
+          rentalPeriodRemaining: observed.rentalPeriodRemaining,
+          lastSeenAt: now
+        });
+      }
+      history.properties[key] = entry;
+    }
+
+    return normalizeHistory(history);
+  }
+
+  function previousLease(historyValue, propertyId) {
+    const history = normalizeHistory(historyValue);
+    const entry = history.properties[String(integer(propertyId, 0))];
+    return entry && entry.previous && entry.previous.length ? entry.previous[0] : null;
+  }
+
+  function currentObservedLease(historyValue, propertyId) {
+    const history = normalizeHistory(historyValue);
+    const entry = history.properties[String(integer(propertyId, 0))];
+    return entry && entry.current || null;
+  }
+
+  return Object.freeze({
+    HISTORY_KEY,
+    HISTORY_VERSION,
+    ATTENTION_FILTERS,
+    normalizeExtension,
+    hasExtensionOffer,
+    extensionLabel,
+    attentionStatus,
+    needsAttention,
+    summary,
+    searchableText,
+    matchesSearch,
+    matchesFilter,
+    marketDistribution,
+    leaseObservation,
+    leaseFingerprint,
+    normalizeHistory,
+    loadHistory,
+    saveHistory,
+    recordProperties,
+    previousLease,
+    currentObservedLease
+  });
+}));
+
+/* ===== src/backup-core.js ===== */
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  if (root) root.R4G3BackupCore = api;
+}(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  const SCHEMA = 'voidsmith-torn-property-rental-manager-backup';
+  const VERSION = 1;
+  const APP_SETTINGS_KEY = 'r4g3_property_rental_manager.settings';
+  const DISPLAY_SETTINGS_KEY = 'r4g3_property_rental_manager.v033';
+  const UPDATE_SETTINGS_KEY = 'r4g3_property_rental_manager.v034.updates';
+  const HISTORY_KEY = 'r4g3_property_rental_manager.v1.lease_history';
+  const SAFE_KEYS = Object.freeze([APP_SETTINGS_KEY, DISPLAY_SETTINGS_KEY, UPDATE_SETTINGS_KEY, HISTORY_KEY]);
+
+  function parseObject(raw) {
+    if (!raw) return null;
+    try {
+      const value = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function sanitizeAppSettings(value) {
+    const source = parseObject(value) || {};
+    const safe = Object.assign({}, source);
+    delete safe.apiKey;
+    return safe;
+  }
+
+  function createBackup(storage, nowValue) {
+    const data = {};
+    if (storage && typeof storage.getItem === 'function') {
+      for (const key of SAFE_KEYS) {
+        const raw = storage.getItem(key);
+        if (!raw) continue;
+        const parsed = parseObject(raw);
+        if (!parsed) continue;
+        data[key] = key === APP_SETTINGS_KEY ? sanitizeAppSettings(parsed) : parsed;
+      }
+    }
+    return {
+      schema: SCHEMA,
+      version: VERSION,
+      exportedAt: Number.isFinite(Number(nowValue)) ? Math.floor(Number(nowValue)) : Date.now(),
+      containsApiKey: false,
+      data
+    };
+  }
+
+  function serializeBackup(storage, nowValue) {
+    return JSON.stringify(createBackup(storage, nowValue), null, 2);
+  }
+
+  function validateBackup(value) {
+    const source = typeof value === 'string' ? parseObject(value) : value;
+    if (!source || source.schema !== SCHEMA || Number(source.version) !== VERSION) {
+      return { valid: false, reason: 'Unsupported Property Rental Manager backup' };
+    }
+    if (!source.data || typeof source.data !== 'object' || Array.isArray(source.data)) {
+      return { valid: false, reason: 'Backup data is missing' };
+    }
+    const data = {};
+    for (const key of SAFE_KEYS) {
+      if (!Object.prototype.hasOwnProperty.call(source.data, key)) continue;
+      const parsed = parseObject(source.data[key]);
+      if (!parsed) return { valid: false, reason: `Invalid backup entry: ${key}` };
+      data[key] = key === APP_SETTINGS_KEY ? sanitizeAppSettings(parsed) : parsed;
+    }
+    return { valid: true, value: { schema: SCHEMA, version: VERSION, data } };
+  }
+
+  function restoreBackup(storage, value) {
+    const checked = validateBackup(value);
+    if (!checked.valid) return checked;
+    if (!storage || typeof storage.setItem !== 'function') return { valid: false, reason: 'Browser storage unavailable' };
+
+    const restored = [];
+    for (const [key, incoming] of Object.entries(checked.value.data)) {
+      if (!SAFE_KEYS.includes(key)) continue;
+      let valueToSave = incoming;
+      if (key === APP_SETTINGS_KEY) {
+        const current = parseObject(storage.getItem(key)) || {};
+        valueToSave = Object.assign({}, current, sanitizeAppSettings(incoming));
+        if (typeof current.apiKey === 'string' && current.apiKey) valueToSave.apiKey = current.apiKey;
+        else delete valueToSave.apiKey;
+      }
+      storage.setItem(key, JSON.stringify(valueToSave));
+      restored.push(key);
+    }
+    return { valid: true, restored, apiKeyPreserved: true };
+  }
+
+  return Object.freeze({
+    SCHEMA,
+    VERSION,
+    APP_SETTINGS_KEY,
+    DISPLAY_SETTINGS_KEY,
+    UPDATE_SETTINGS_KEY,
+    HISTORY_KEY,
+    SAFE_KEYS,
+    sanitizeAppSettings,
+    createBackup,
+    serializeBackup,
+    validateBackup,
+    restoreBackup
+  });
+}));
+
+/* ===== src/portfolio-ui.js ===== */
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  if (root) root.R4G3PortfolioUi = api;
+}(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  function money(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.floor(number).toLocaleString('en-US') : 'n/a';
+  }
+
+  function create(options) {
+    const config = options || {};
+    const base = config.baseController;
+    const windowLike = config.window;
+    const documentLike = config.document;
+    const storage = config.storage || windowLike && windowLike.localStorage;
+    const portfolio = config.portfolioCore;
+    const backup = config.backupCore;
+    const propertyCore = config.propertyCore;
+    if (!base || !windowLike || !documentLike || !portfolio || !backup || !propertyCore) {
+      throw new TypeError('Portfolio UI dependencies are required');
+    }
+
+    let history = portfolio.loadHistory(storage);
+    let query = '';
+    let filter = 'all';
+    let notice = '';
+    let observer = null;
+    let scheduled = false;
+    let destroyed = false;
+
+    const currentState = () => base.getState ? base.getState() : { properties: [], rows: [] };
+    const propertyById = (state, id) => (state.properties || []).find(p => Number(p && p.id) === Number(id)) || null;
+    const entryById = (state, id) => (state.rows || []).find(r => Number(r && r.property && r.property.id) === Number(id)) || null;
+
+    function remember() {
+      const state = currentState();
+      if (!Array.isArray(state.properties) || !state.properties.length) return history;
+      history = portfolio.saveHistory(storage, portfolio.recordProperties(history, state.properties, Date.now()));
+      return history;
+    }
+
+    function chip(label, value, tone) {
+      const node = documentLike.createElement('span');
+      node.textContent = `${label} ${value}`;
+      Object.assign(node.style, {
+        display: 'inline-flex', alignItems: 'center', padding: '5px 8px', borderRadius: '999px',
+        border: '1px solid rgba(128,128,128,.35)', fontSize: '12px', fontWeight: '700'
+      });
+      if (tone === 'danger') node.style.color = '#ff8f8f';
+      if (tone === 'warn') node.style.color = '#ffd166';
+      if (tone === 'good') node.style.color = '#74ff8b';
+      return node;
+    }
+
+    function ensureDashboard(panel, state) {
+      let box = panel.querySelector('#r4g3-prm-v1-dashboard');
+      if (box) return box;
+      box = documentLike.createElement('section');
+      box.id = 'r4g3-prm-v1-dashboard';
+      Object.assign(box.style, {
+        margin: '8px', padding: '10px', border: '1px solid rgba(128,128,128,.30)', borderRadius: '8px',
+        display: 'grid', gap: '9px', background: 'rgba(127,127,127,.06)'
+      });
+      const summary = documentLike.createElement('div');
+      summary.dataset.role = 'portfolio-summary';
+      Object.assign(summary.style, { display: 'flex', flexWrap: 'wrap', gap: '7px', alignItems: 'center' });
+      box.appendChild(summary);
+
+      const controls = documentLike.createElement('div');
+      Object.assign(controls.style, {
+        display: 'grid', gridTemplateColumns: Number(windowLike.innerWidth) <= 700 ? '1fr' : 'minmax(180px,1fr) minmax(150px,220px)', gap: '8px'
+      });
+      const search = documentLike.createElement('input');
+      search.type = 'search';
+      search.value = query;
+      search.placeholder = 'Search property, ID, renter name or renter ID';
+      search.setAttribute('aria-label', 'Search properties and renters');
+      Object.assign(search.style, { minHeight: '40px', width: '100%', boxSizing: 'border-box', padding: '7px 9px', borderRadius: '6px', border: '1px solid rgba(128,128,128,.45)', background: 'inherit', color: 'inherit' });
+      search.addEventListener('input', () => { query = String(search.value || ''); applyFilters(panel, currentState()); });
+
+      const select = documentLike.createElement('select');
+      select.setAttribute('aria-label', 'Filter property attention state');
+      Object.assign(select.style, { minHeight: '40px', width: '100%', padding: '7px 9px', borderRadius: '6px', border: '1px solid rgba(128,128,128,.45)', background: 'inherit', color: 'inherit' });
+      const labels = { all: 'All properties', attention: 'Needs attention', vacant: 'Vacant', listed: 'Listed', rented: 'Rented', extension: 'Extension offered', active: 'Active / no urgent action' };
+      for (const value of portfolio.ATTENTION_FILTERS) {
+        const option = documentLike.createElement('option');
+        option.value = value;
+        option.textContent = labels[value] || value;
+        option.selected = value === filter;
+        select.appendChild(option);
+      }
+      select.addEventListener('change', () => { filter = select.value; applyFilters(panel, currentState()); });
+      controls.append(search, select);
+      box.appendChild(controls);
+
+      const empty = documentLike.createElement('small');
+      empty.dataset.role = 'portfolio-empty';
+      empty.textContent = 'No properties match this search/filter.';
+      empty.hidden = true;
+      empty.style.opacity = '.75';
+      box.appendChild(empty);
+      if (notice) {
+        const n = documentLike.createElement('small');
+        n.dataset.role = 'portfolio-notice';
+        n.textContent = notice;
+        n.style.color = '#74ff8b';
+        box.appendChild(n);
+      }
+
+      const header = panel.querySelector('.r4g3-prm-header');
+      if (header && header.parentNode) header.parentNode.insertBefore(box, header.nextSibling);
+      else panel.prepend(box);
+      refreshSummary(box, state);
+      return box;
+    }
+
+    function refreshSummary(box, state) {
+      const host = box.querySelector('[data-role="portfolio-summary"]');
+      if (!host) return;
+      const s = portfolio.summary(state.properties || []);
+      const signature = JSON.stringify(s);
+      if (host.dataset.signature === signature) return;
+      host.dataset.signature = signature;
+      host.textContent = '';
+      host.append(
+        chip('Total', s.total),
+        chip('Needs attention', s.attention, s.attention ? 'danger' : 'good'),
+        chip('Vacant', s.vacant, s.vacant ? 'warn' : ''),
+        chip('Urgent 0–3d', s.urgent, s.urgent ? 'danger' : ''),
+        chip('4–7d', s.expiring, s.expiring ? 'warn' : ''),
+        chip('8–14d', s.dueSoon, s.dueSoon ? 'warn' : ''),
+        chip('Extension', s.extension, s.extension ? 'good' : ''),
+        chip('Listed', s.listed)
+      );
+    }
+
+    function applyFilters(panel, state) {
+      let visible = 0;
+      for (const row of panel.querySelectorAll('.r4g3-prm-property[data-property-id]')) {
+        const property = propertyById(state, row.dataset.propertyId);
+        const show = Boolean(property) && portfolio.matchesSearch(property, query) && portfolio.matchesFilter(property, filter);
+        row.hidden = !show;
+        if (show) visible += 1;
+      }
+      const empty = panel.querySelector('[data-role="portfolio-empty"]');
+      if (empty) empty.hidden = visible > 0 || !(state.properties && state.properties.length);
+    }
+
+    function ensureLeaseInfo(row, property, entry) {
+      const existing = row.querySelector('[data-role="lease-info"]');
+      if (String(property.status || '').toLowerCase() !== 'rented') {
+        if (existing) existing.remove();
+        return;
+      }
+      if (existing) return;
+
+      const box = documentLike.createElement('section');
+      box.dataset.role = 'lease-info';
+      Object.assign(box.style, {
+        gridColumn: '1 / -1', padding: '9px', borderRadius: '7px',
+        border: '1px solid rgba(128,128,128,.25)', display: 'grid', gap: '5px',
+        background: 'rgba(127,127,127,.05)'
+      });
+      const renter = property.rentedBy || {};
+      const days = Number(property.rentalPeriodRemaining);
+      const title = documentLike.createElement('strong');
+      title.textContent = `Lease • ${renter.name || 'Unknown tenant'}${renter.id ? ` [${renter.id}]` : ''}`;
+      box.appendChild(title);
+
+      const current = documentLike.createElement('div');
+      current.textContent = `${Number.isFinite(days) ? `${Math.floor(days)} days remaining` : 'Days remaining unavailable'} • ${property.costPerDay != null ? `$${money(property.costPerDay)}/day` : 'Current rent unavailable'} • Extension: ${portfolio.extensionLabel(property)}`;
+      box.appendChild(current);
+
+      const quote = entry && entry.quote;
+      const comparison = documentLike.createElement('small');
+      if (quote && quote.proposedTotal != null && Number(quote.targetDays)) {
+        const proposed = quote.proposedTotal / quote.targetDays;
+        const actual = Number(property.costPerDay);
+        comparison.textContent = Number.isFinite(actual) && actual > 0
+          ? `Current $${money(actual)}/day • Market proposal $${money(proposed)}/day (${((proposed - actual) / actual * 100) >= 0 ? '+' : ''}${((proposed - actual) / actual * 100).toFixed(1)}%).`
+          : `Current market proposal: $${money(proposed)}/day.`;
+      } else {
+        comparison.textContent = 'Current market proposal unavailable until this property market is scanned.';
+      }
+      box.appendChild(comparison);
+
+      const previous = portfolio.previousLease(history, property.id);
+      const historyLine = documentLike.createElement('small');
+      historyLine.style.opacity = '.78';
+      historyLine.textContent = previous
+        ? `Previous locally observed lease: ${previous.tenantName || previous.tenantId || 'Unknown tenant'} • ${previous.costPerDay != null ? `$${money(previous.costPerDay)}/day` : 'rent unavailable'}${previous.rentalPeriod != null ? ` • ${Math.floor(previous.rentalPeriod)}d agreement` : ''}.`
+        : 'No previous locally observed lease yet. v1.0 history begins when this browser observes property refreshes.';
+      box.appendChild(historyLine);
+
+      if (!portfolio.hasExtensionOffer(property) && Number.isFinite(days) && days <= 14) {
+        const button = documentLike.createElement('button');
+        button.type = 'button';
+        button.textContent = 'OPEN EXTENSION';
+        Object.assign(button.style, {
+          justifySelf: 'start', minHeight: '40px', padding: '7px 10px', borderRadius: '6px',
+          border: '1px solid currentColor', background: 'transparent', color: 'inherit'
+        });
+        button.addEventListener('click', event => {
+          event.preventDefault();
+          windowLike.location.href = propertyCore.extensionUrl(property.id);
+        });
+        box.appendChild(button);
+      }
+      row.appendChild(box);
+    }
+
+    function ensureDistribution(row, entry) {
+      const quote = entry && entry.quote;
+      const d = portfolio.marketDistribution(quote);
+      const existing = row.querySelector('[data-role="market-distribution"]');
+      if (!quote || quote.sampleStatus !== 'ok' || !d) {
+        if (existing) existing.remove();
+        return;
+      }
+      if (existing) return;
+      const box = documentLike.createElement('details');
+      box.dataset.role = 'market-distribution';
+      Object.assign(box.style, {
+        gridColumn: '1 / -1', padding: '8px 9px', borderRadius: '7px',
+        border: '1px solid rgba(128,128,128,.25)'
+      });
+      const heading = documentLike.createElement('summary');
+      heading.style.cursor = 'pointer';
+      heading.style.fontWeight = '700';
+      heading.textContent = `Market distribution • ${quote.usedMatchCount}/${quote.exactMatchCount} trusted • ${quote.outlierCount} outlier${quote.outlierCount === 1 ? '' : 's'} removed`;
+      box.appendChild(heading);
+      const totals = documentLike.createElement('div');
+      totals.style.marginTop = '7px';
+      totals.textContent = `100d: Low $${money(d.lowestTotal)} • P25 $${money(d.q1Total)} • Median $${money(d.medianTotal)} • Average $${money(d.averageTotal)} • P75 $${money(d.q3Total)} • High $${money(d.highestTotal)}`;
+      box.appendChild(totals);
+      const daily = documentLike.createElement('small');
+      daily.textContent = `Per day: P25 $${money(d.q1Daily)} • Median $${money(d.medianDaily)} • P75 $${money(d.q3Daily)} • Proposed $${money(d.proposedDaily)}`;
+      box.appendChild(daily);
+      row.appendChild(box);
+    }
+
+    function downloadBackup() {
+      if (!windowLike.Blob || !windowLike.URL || typeof windowLike.URL.createObjectURL !== 'function') {
+        notice = 'Backup export unavailable in this browser context.';
+        enhance(true);
+        return false;
+      }
+      const blob = new windowLike.Blob([backup.serializeBackup(storage, Date.now())], { type: 'application/json' });
+      const url = windowLike.URL.createObjectURL(blob);
+      const a = documentLike.createElement('a');
+      a.href = url;
+      a.download = `voidsmith-property-rental-manager-backup-${new Date().toISOString().slice(0,10)}.json`;
+      documentLike.body.appendChild(a);
+      a.click();
+      a.remove();
+      windowLike.setTimeout(() => windowLike.URL.revokeObjectURL(url), 0);
+      notice = 'Local backup exported. API key excluded.';
+      enhance(true);
+      return true;
+    }
+
+    function importText(text) {
+      const result = backup.restoreBackup(storage, text);
+      notice = result.valid
+        ? 'Backup imported. Current API key preserved; reload Torn to apply restored UI settings.'
+        : `Backup import rejected: ${result.reason}`;
+      if (result.valid) history = portfolio.loadHistory(storage);
+      enhance(true);
+      return result;
+    }
+
+    function chooseImport() {
+      const input = documentLike.createElement('input');
+      input.type = 'file';
+      input.accept = 'application/json,.json';
+      input.style.display = 'none';
+      input.addEventListener('change', () => {
+        const file = input.files && input.files[0];
+        if (!file || !windowLike.FileReader) {
+          input.remove();
+          return;
+        }
+        const reader = new windowLike.FileReader();
+        reader.onload = () => {
+          importText(String(reader.result || ''));
+          input.remove();
+        };
+        reader.onerror = () => {
+          notice = 'Backup import failed while reading the selected file.';
+          enhance(true);
+          input.remove();
+        };
+        reader.readAsText(file);
+      }, { once: true });
+      documentLike.body.appendChild(input);
+      input.click();
+      return true;
+    }
+
+    function ensureBackupControls() {
+      const settings = documentLike.getElementById('r4g3-prm-settings-window');
+      if (!settings || settings.querySelector('[data-role="backup-controls"]')) return;
+      const box = documentLike.createElement('section');
+      box.dataset.role = 'backup-controls';
+      Object.assign(box.style, {
+        marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(128,128,128,.30)',
+        display: 'grid', gap: '7px'
+      });
+      const title = documentLike.createElement('strong');
+      title.textContent = 'Local backup';
+      box.appendChild(title);
+      const note = documentLike.createElement('small');
+      note.textContent = 'Exports settings and locally observed lease history. API key and disposable market cache are never included.';
+      note.style.opacity = '.78';
+      box.appendChild(note);
+      const actions = documentLike.createElement('div');
+      Object.assign(actions.style, { display: 'flex', flexWrap: 'wrap', gap: '8px' });
+      for (const [label, handler] of [['EXPORT BACKUP', downloadBackup], ['IMPORT BACKUP', chooseImport]]) {
+        const b = documentLike.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        Object.assign(b.style, {
+          minHeight: '40px', padding: '7px 10px', borderRadius: '6px',
+          border: '1px solid currentColor', background: 'transparent', color: 'inherit'
+        });
+        b.addEventListener('click', handler);
+        actions.appendChild(b);
+      }
+      box.appendChild(actions);
+      settings.appendChild(box);
+    }
+
+    function enhance(forceNotice) {
+      if (destroyed) return;
+      const state = currentState();
+      const panel = documentLike.getElementById('r4g3-prm-panel');
+      const uiState = base.getSettings && base.getSettings().uiState;
+      if (panel && uiState === 'minimized') {
+        const dashboard = panel.querySelector('#r4g3-prm-v1-dashboard');
+        if (dashboard) dashboard.remove();
+      } else if (panel) {
+        let dashboard = panel.querySelector('#r4g3-prm-v1-dashboard');
+        if (forceNotice && dashboard) {
+          dashboard.remove();
+          dashboard = null;
+        }
+        dashboard = dashboard || ensureDashboard(panel, state);
+        refreshSummary(dashboard, state);
+        for (const row of panel.querySelectorAll('.r4g3-prm-property[data-property-id]')) {
+          const property = propertyById(state, row.dataset.propertyId);
+          if (!property) continue;
+          const entry = entryById(state, property.id);
+          row.dataset.attention = portfolio.attentionStatus(property);
+          ensureLeaseInfo(row, property, entry);
+          ensureDistribution(row, entry);
+        }
+        applyFilters(panel, state);
+      }
+      ensureBackupControls();
+    }
+
+    function schedule() {
+      if (scheduled || destroyed) return;
+      scheduled = true;
+      const run = typeof windowLike.queueMicrotask === 'function'
+        ? windowLike.queueMicrotask.bind(windowLike)
+        : callback => Promise.resolve().then(callback);
+      run(() => {
+        scheduled = false;
+        enhance();
+      });
+    }
+
+    if (windowLike.MutationObserver && (documentLike.body || documentLike.documentElement)) {
+      observer = new windowLike.MutationObserver(schedule);
+      observer.observe(documentLike.body || documentLike.documentElement, { childList: true, subtree: true });
+    }
+
+    function afterSync(name, args, rememberHistory) {
+      const result = base[name](...args);
+      if (rememberHistory) remember();
+      enhance();
+      return result;
+    }
+
+    async function afterAsync(name, args, rememberHistory) {
+      const result = await base[name](...args);
+      if (rememberHistory) remember();
+      enhance();
+      return result;
+    }
+
+    const controller = Object.assign({}, base, {
+      load: typeof base.load === 'function' ? (...args) => afterAsync('load', args, true) : undefined,
+      hydrate: typeof base.hydrate === 'function' ? (...args) => afterSync('hydrate', args, true) : undefined,
+      updateProperty: typeof base.updateProperty === 'function' ? (...args) => afterAsync('updateProperty', args, true) : undefined,
+      updateAll: typeof base.updateAll === 'function' ? (...args) => afterAsync('updateAll', args, true) : undefined,
+      syncOwnedProperties: typeof base.syncOwnedProperties === 'function' ? (...args) => afterAsync('syncOwnedProperties', args, true) : undefined,
+      render: (...args) => afterSync('render', args, false),
+      open: (...args) => afterSync('open', args, false),
+      openSettings: (...args) => afterSync('openSettings', args, false),
+      exportBackup: downloadBackup,
+      importBackupText: importText,
+      getLeaseHistory: () => portfolio.normalizeHistory(history),
+      destroy() {
+        destroyed = true;
+        if (observer) observer.disconnect();
+        observer = null;
+        return base.destroy();
+      }
+    });
+
+    remember();
+    enhance();
+    return Object.freeze(controller);
+  }
+
+  return Object.freeze({ create });
 }));
 
 /* ===== src/app-runtime.js ===== */
@@ -5545,30 +6423,44 @@
 (function (root, factory) {
   const baseApp = typeof module === 'object' && module.exports ? require('./app-v0310') : root.R4G3PropertyRentalApp;
   const uiObserver = typeof module === 'object' && module.exports ? require('./ui-observer') : root.R4G3UiObserver;
-  const api = factory(baseApp, uiObserver);
+  const portfolioUi = typeof module === 'object' && module.exports ? require('./portfolio-ui') : root.R4G3PortfolioUi;
+  const portfolioCore = typeof module === 'object' && module.exports ? require('./portfolio-core') : root.R4G3PortfolioCore;
+  const backupCore = typeof module === 'object' && module.exports ? require('./backup-core') : root.R4G3BackupCore;
+  const propertyCore = typeof module === 'object' && module.exports ? require('./property-core') : root.R4G3PropertyCore;
+  const api = factory(baseApp, uiObserver, portfolioUi, portfolioCore, backupCore, propertyCore);
   if (typeof module === 'object' && module.exports) module.exports = api;
   if (root) root.R4G3PropertyRentalApp = api;
-}(typeof globalThis !== 'undefined' ? globalThis : this, function (baseApp, uiObserver) {
+}(typeof globalThis !== 'undefined' ? globalThis : this, function (baseApp, uiObserver, portfolioUi, portfolioCore, backupCore, propertyCore) {
   'use strict';
 
   if (!baseApp || typeof baseApp.createController !== 'function') throw new Error('Property Rental Manager app runtime is unavailable');
   if (!uiObserver || typeof uiObserver.createWindowProxy !== 'function') throw new Error('Property Rental Manager UI observer runtime is unavailable');
+  if (!portfolioUi || typeof portfolioUi.create !== 'function') throw new Error('Property Rental Manager portfolio UI is unavailable');
 
   function createController(options) {
-    const config = Object.assign({}, options || {});
+    const original = Object.assign({}, options || {});
+    const config = Object.assign({}, original);
     if (config.window && config.document) {
       config.window = uiObserver.createWindowProxy(config.window, config.document);
     }
-    return baseApp.createController(config);
+    const baseController = baseApp.createController(config);
+    return portfolioUi.create({
+      baseController,
+      window: config.window,
+      document: config.document,
+      storage: original.storage || config.window && config.window.localStorage,
+      portfolioCore,
+      backupCore,
+      propertyCore
+    });
   }
 
   return Object.freeze(Object.assign({}, baseApp, {
-    RUNTIME_VERSION: '0.4.2',
+    RUNTIME_VERSION: '1.0.0',
     OBSERVER_MODE: 'multiplexed',
     createController
   }));
 }));
-
 
 /* ===== src/bootstrap.js ===== */
 (function (root, factory) {
