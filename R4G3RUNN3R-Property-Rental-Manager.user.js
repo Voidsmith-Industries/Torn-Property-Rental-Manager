@@ -1,9 +1,13 @@
 // ==UserScript==
 // @name         R4G3RUNN3R Property Rental Manager
-// @namespace    https://github.com/R4G3RUNN3R
+// @namespace    https://github.com/Voidsmith-Industries/Torn-Property-Rental-Manager
 // @version      0.4.0
 // @description  Manage Torn rentals with truthful property/market timestamps, cache-aware cancellable scans, live diagnostics, and safe native actions.
 // @author       R4G3RUNN3R
+// @license      MIT
+// @updateURL    https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Property-Rental-Manager/main/R4G3RUNN3R-Property-Rental-Manager.user.js
+// @downloadURL  https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Property-Rental-Manager/main/R4G3RUNN3R-Property-Rental-Manager.user.js
+// @supportURL   https://github.com/Voidsmith-Industries/Torn-Property-Rental-Manager/issues
 // @match        https://www.torn.com/properties.php*
 // @grant        GM_xmlhttpRequest
 // @connect      api.torn.com
