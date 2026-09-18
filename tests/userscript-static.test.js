@@ -12,10 +12,11 @@ function release() {
   return build.buildText();
 }
 
-test('release userscript has narrow Torn properties metadata and v0.4.1 version', () => {
+test('release userscript has narrow Torn properties metadata and v0.4.2 version', () => {
   const source = release();
   assert.match(source, /@name\s+R4G3RUNN3R Property Rental Manager/);
-  assert.match(source, /@version\s+0\.4\.1/);
+  assert.match(source, /@version\s+0\.4\.2/);
+  assert.match(source, /@icon\s+data:image\/svg\+xml,/);
   assert.match(source, /@match\s+https:\/\/www\.torn\.com\/properties\.php\*/);
   assert.match(source, /@connect\s+api\.torn\.com/);
   assert.match(source, /@grant\s+GM_xmlhttpRequest/);
