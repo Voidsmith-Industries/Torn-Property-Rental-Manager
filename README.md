@@ -6,9 +6,13 @@ A standalone Torn.com userscript by **R4G3RUNN3R** for pricing and managing prop
 
 Install the current userscript from:
 
-`https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Property-Rental-Manager/main/R4G3RUNN3R-Property-Rental-Manager.user.js`
+`https://voidsmithindustries.com/torn/install/property-rental-manager.user.js`
 
-Tampermonkey-compatible update metadata points to the same Voidsmith Industries GitHub distribution. The project is released under the MIT License; see `LICENSE`.
+Tampermonkey-compatible update metadata points to the same Voidsmith Industries website distribution. The project is released under the MIT License; see `LICENSE`.
+
+## v0.4.1
+
+v0.4.1 is a distribution-only patch. Runtime behavior is unchanged from v0.4.0; install and future update checks now use the Voidsmith Industries website instead of GitHub raw delivery.
 
 ## v0.4.0
 
