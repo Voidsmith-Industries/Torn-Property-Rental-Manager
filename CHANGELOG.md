@@ -2,6 +2,13 @@
 
 All notable changes to Torn Property Rental Manager are recorded here.
 
+## [0.4.2] - 2026-09-18
+
+### Presentation
+
+- Added the dedicated Voidsmith house icon to the userscript metadata.
+- Preserved the existing website-hosted install/update authority and rental behavior.
+
 ## [0.4.1] - 2026-09-18
 
 ### Distribution

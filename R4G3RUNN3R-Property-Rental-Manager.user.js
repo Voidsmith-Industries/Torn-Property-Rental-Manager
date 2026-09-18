@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         R4G3RUNN3R Property Rental Manager
 // @namespace    https://voidsmithindustries.com/torn/
-// @version      0.4.1
+// @version      0.4.2
 // @description  Manage Torn rentals with truthful property/market timestamps, cache-aware cancellable scans, live diagnostics, and safe native actions.
 // @author       R4G3RUNN3R
 // @license      MIT
+// @icon         data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22%2311170d%22%2F%3E%3Cpath%20d%3D%22M13%2030L32%2015l19%2015v20a4%204%200%200%201-4%204H17a4%204%200%200%201-4-4V30Z%22%20fill%3D%22%23f3f7ee%22%2F%3E%3Cpath%20d%3D%22M25%2054V39h14v15%22%20fill%3D%22%23d9ff52%22%2F%3E%3Cpath%20d%3D%22M10%2031L32%2013l22%2018%22%20fill%3D%22none%22%20stroke%3D%22%23d9ff52%22%20stroke-width%3D%225%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E
 // @updateURL    https://voidsmithindustries.com/torn/install/property-rental-manager.user.js
 // @downloadURL  https://voidsmithindustries.com/torn/install/property-rental-manager.user.js
 // @supportURL   https://voidsmithindustries.com/torn/support.html
@@ -5562,7 +5563,7 @@
   }
 
   return Object.freeze(Object.assign({}, baseApp, {
-    RUNTIME_VERSION: '0.4.1',
+    RUNTIME_VERSION: '0.4.2',
     OBSERVER_MODE: 'multiplexed',
     createController
   }));

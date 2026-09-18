@@ -10,6 +10,10 @@ Install the current userscript from:
 
 Tampermonkey-compatible update metadata points to the same Voidsmith Industries website distribution. The project is released under the MIT License; see `LICENSE`.
 
+## v0.4.2 userscript icon
+
+v0.4.2 adds the dedicated Voidsmith house icon to the userscript metadata. Rental behavior and the website-hosted install/update path are unchanged from v0.4.1.
+
 ## v0.4.1
 
 v0.4.1 is a distribution-only patch. Runtime behavior is unchanged from v0.4.0; install and future update checks now use the Voidsmith Industries website instead of GitHub raw delivery.
