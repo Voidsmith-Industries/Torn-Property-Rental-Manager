@@ -2,6 +2,33 @@
 
 All notable changes to Torn Property Rental Manager are recorded here.
 
+## [1.0.0] - 2026-09-19
+
+### Landlord operations
+
+- Added portfolio attention counts and filters for vacant, urgent, expiring, due-soon, active, listed and extension-offered properties.
+- Added property/renter search by name or ID.
+- Added current lease context with renter, days remaining, rent/day and extension status.
+- Added browser-local observed lease history without requiring Full Access Torn logs.
+- Added explicit navigation to Torn's native extension screen for eligible expiring leases; no extension is submitted automatically.
+
+### Market transparency
+
+- Added P25, median and P75 distribution context plus per-day equivalents over the existing trusted exact-comparable set.
+- Preserved the existing pricing formula, outlier protections, sample-quality gates and manual market-scan model.
+
+### Local data and mobile
+
+- Added versioned local export/import for settings and locally observed lease history.
+- API keys and disposable market cache are excluded from exported backups; importing preserves the browser's current API key.
+- Added touch-sized landlord controls and single-column attention controls for PDA/mobile widths.
+
+### Security and compatibility
+
+- Preserved Limited-access property data as the lease-history authority.
+- Preserved explicit PREPARE RENTAL -> LIST PROPERTY and multi-confirm cancellation boundaries.
+- Added no background native Torn action, telemetry, external backend, or Full Access key dependency.
+
 ## [0.4.2] - 2026-09-18
 
 ### Presentation
