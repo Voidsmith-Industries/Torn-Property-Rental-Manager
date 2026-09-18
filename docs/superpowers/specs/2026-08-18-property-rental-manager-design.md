@@ -21,7 +21,7 @@ Automatic behavior is limited to Torn API reads, local calculations, local persi
 
 ## API requirements
 
-- Owned properties: Torn v2 `/user/properties`
+- Owned properties: Torn v2 `/user/properties` (Limited access; current rental fields also provide v1 landlord attention/history observations)
 - Rental market: Torn v2 `/market/{propertyTypeId}/rentals`
 - API key is sent only as `Authorization: ApiKey {key}` to `https://api.torn.com`
 - Minimum 800 ms between API request starts
@@ -76,6 +76,18 @@ Confidence:
 - High: >= 8 cleaned comparables and average similarity >= 0.90
 - Medium: >= 5 cleaned comparables and average similarity >= 0.75
 - Low: otherwise
+
+## v1 landlord operations
+
+v1 adds an operational landlord layer without changing the pricing or native-action safety authorities.
+
+- **Attention states:** vacant, urgent 0-3d, expiring 4-7d, due soon 8-14d, active, listed and extension offered.
+- **Search:** property name/ID and renter name/ID.
+- **Lease history:** browser-local observations from successful owned-property refreshes only. No Full Access user-log dependency and no claims about pre-install history.
+- **Market explanation:** quartile and per-day context is derived from the already filtered trusted exact-comparable set; it does not alter pricing.
+- **Backup:** only allowlisted local settings and observed lease history are exportable. API keys and market caches are excluded; import preserves the existing API key.
+- **Extension boundary:** the manager may navigate to Torn's native `offerExtension` route after an explicit user click. It must not submit the extension.
+- **PDA/mobile:** landlord search/filter/actions must remain usable at narrow widths with touch-size controls.
 
 ## Lease draft
 
