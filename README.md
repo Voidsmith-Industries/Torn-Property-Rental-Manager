@@ -10,6 +10,56 @@ Install the current userscript from:
 
 Tampermonkey-compatible update metadata points to the same Voidsmith Industries website distribution. The project is released under the MIT License; see `LICENSE`.
 
+## v1.0.0 landlord operations
+
+v1.0.0 promotes Property Rental Manager from a pricing/listing assistant into a complete browser-local landlord workflow while preserving the proven pricing engine and explicit Torn action boundaries.
+
+### Portfolio attention
+
+The manager now summarizes and filters the portfolio by operational state:
+
+- **Vacant**
+- **Urgent: 0-3 days remaining**
+- **Expiring: 4-7 days**
+- **Due soon: 8-14 days**
+- **Active**
+- **Listed for rent**
+- **Extension offered**
+
+Search covers property name, property ID, renter name and renter ID. The dashboard is informational only; it never submits a Torn action.
+
+### Lease context and history
+
+Current rented-property cards show the renter, days remaining, current daily rent and extension-offer state. When market data has been scanned, the card compares the current daily rent with the current exact-comparable market proposal.
+
+Historical lease context is intentionally **local and observed from v1.0 onward**. The script records lease transitions only from the Limited-access property snapshots it normally retrieves. It does not request Full Access logs and does not claim to know leases from before this browser began observing the property.
+
+For leases with 14 days or fewer remaining and no existing extension offer, **OPEN EXTENSION** navigates to Torn's native extension screen. It does not create or submit an extension.
+
+### Transparent market distribution
+
+The existing exact-property/exact-modification pricing engine remains authoritative. v1 adds a read-only distribution view over the already trusted comparable set:
+
+- low
+- P25
+- median
+- average
+- P75
+- high
+- per-day P25 / median / P75
+- proposed per-day rate
+- exact / trusted / outlier counts
+
+No v1 feature changes the pricing formula, outlier rules or tiny-sample fail-closed behavior.
+
+### Local backup
+
+Settings and locally observed lease history can be exported/imported as a versioned JSON backup. The Torn API key and disposable market cache are explicitly excluded. Import preserves the API key already stored in the current browser.
+
+### PDA / mobile
+
+The attention controls collapse to a single-column layout at mobile widths and use touch-sized inputs/actions. Existing mobile panel behavior remains intact.
+
 ## v0.4.2 userscript icon
 
 v0.4.2 adds the dedicated Voidsmith house icon to the userscript metadata. Rental behavior and the website-hosted install/update path are unchanged from v0.4.1.
@@ -190,7 +240,7 @@ Properties listed for rent remain in the bottom status group. A property success
 
 ## Torn API safety
 
-The API key remains browser-local, is never rendered back into an input, and is sent only in the `Authorization: ApiKey ...` header to `api.torn.com`.
+The API key remains browser-local, is never rendered back into an input, and is sent only in the `Authorization: ApiKey ...` header to `api.torn.com`. v1 landlord operations continue to use the existing Limited-access property data; the script does not require Full Access logs for lease history.
 
 Hard request controls:
 

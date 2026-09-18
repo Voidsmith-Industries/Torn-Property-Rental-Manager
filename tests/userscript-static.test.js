@@ -12,10 +12,10 @@ function release() {
   return build.buildText();
 }
 
-test('release userscript has narrow Torn properties metadata and v0.4.2 version', () => {
+test('release userscript has narrow Torn properties metadata and v1.0.0 version', () => {
   const source = release();
   assert.match(source, /@name\s+R4G3RUNN3R Property Rental Manager/);
-  assert.match(source, /@version\s+0\.4\.2/);
+  assert.match(source, /@version\s+1\.0\.0/);
   assert.match(source, /@icon\s+data:image\/svg\+xml,/);
   assert.match(source, /@match\s+https:\/\/www\.torn\.com\/properties\.php\*/);
   assert.match(source, /@connect\s+api\.torn\.com/);
@@ -186,6 +186,9 @@ test('build script declares every shipped source module in deterministic order',
     'src/settings-core.js',
     'src/update-core.js',
     'src/ui-observer.js',
+    'src/portfolio-core.js',
+    'src/backup-core.js',
+    'src/portfolio-ui.js',
     'src/app-runtime.js',
     'src/bootstrap.js'
   ];
