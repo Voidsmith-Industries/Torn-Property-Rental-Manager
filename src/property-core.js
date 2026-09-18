@@ -121,6 +121,12 @@
     return `https://www.torn.com/properties.php#/p=options&ID=${id}&tab=lease`;
   }
 
+  function extensionUrl(propertyId) {
+    const id = asPositiveInt(propertyId);
+    if (!id) throw new TypeError('A positive property ID is required');
+    return `https://www.torn.com/properties.php#/p=options&ID=${id}&tab=offerExtension`;
+  }
+
   function uniquePropertyTypeIds(properties) {
     if (!Array.isArray(properties)) return [];
     return [...new Set(properties
@@ -137,6 +143,7 @@
     normalizeProperties,
     isEligibleForLease,
     leaseUrl,
+    extensionUrl,
     uniquePropertyTypeIds
   });
 }));
