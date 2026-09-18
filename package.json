@@ -1,8 +1,8 @@
 {
   "name": "torn-property-rental-manager",
-  "version": "0.4.2",
+  "version": "1.0.0",
   "private": true,
-  "description": "Standalone Torn rental manager with truthful property and market timestamps, cache-aware paginated scans, cancellation, retry diagnostics, outlier-protected pricing, and safe native rental actions",
+  "description": "Standalone Torn landlord manager with attention queues, exact-comparable market pricing, local lease history/backups, and safe native rental actions",
   "scripts": {
     "build": "node scripts/build-userscript.js",
     "build:check": "node scripts/build-userscript.js --check",
