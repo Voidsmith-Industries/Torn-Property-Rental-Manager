@@ -2051,7 +2051,9 @@
   }
 
   function normalizeExtension(value) {
-    if (!value || typeof value !== 'object') return null;
+    if (value == null || value === false || value === 0 || value === '') return null;
+    if (value === true) return { status: 'offered', cost: null, period: null, createdAt: null };
+    if (typeof value !== 'object') return { status: text(value).toLowerCase() || 'offered', cost: null, period: null, createdAt: null };
     const status = text(value.status).toLowerCase();
     const cost = nonNegativeNumber(value.cost);
     const period = nonNegativeNumber(value.period != null ? value.period : value.rental_period);
