@@ -2,6 +2,14 @@
 
 All notable changes to Torn Property Rental Manager are recorded here.
 
+## [0.4.1] - 2026-09-18
+
+### Distribution
+
+- Moved public install/update authority to https://voidsmithindustries.com/torn/install/property-rental-manager.user.js.
+- Replaced GitHub-based userscript namespace/support metadata with Voidsmith website destinations.
+- Runtime behavior is unchanged from v0.4.0.
+
 ## [0.4.0] - 2026-08-24
 
 ### Architecture
