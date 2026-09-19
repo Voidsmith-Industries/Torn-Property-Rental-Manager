@@ -38,7 +38,7 @@ test('v1 build includes landlord modules and exact runtime identity', () => {
   assert.ok(build.sourceFiles.includes('src/portfolio-core.js'));
   assert.ok(build.sourceFiles.includes('src/backup-core.js'));
   assert.ok(build.sourceFiles.includes('src/portfolio-ui.js'));
-  assert.equal(appRuntime.RUNTIME_VERSION, '1.0.0');
+  assert.equal(appRuntime.RUNTIME_VERSION, '1.0.1');
 });
 
 test('v1 portfolio UI renders attention/search/lease/market context without submitting Torn actions', () => {
