@@ -70,23 +70,6 @@
       if (destroyed) return;
       const panel = documentLike.getElementById('r4g3-prm-panel');
       if (panel) {
-        const refresh = panel.querySelector('[data-action="refresh"]');
-        if (refresh) {
-          refresh.disabled = Boolean(syncPromise);
-          refresh.textContent = syncPromise ? 'Refreshing…' : 'Refresh';
-          refresh.title = 'Refresh owned property and lease state only. Rental-market scans remain manual.';
-          if (refresh.dataset.r4g3PropertySyncHook !== '1') {
-            refresh.dataset.r4g3PropertySyncHook = '1';
-            refresh.addEventListener('click', event => {
-              if (event && typeof event.preventDefault === 'function') event.preventDefault();
-              if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
-              if (syncPromise) return;
-              const pending = syncOwnedProperties();
-              enhanceUi();
-              pending.catch(() => {});
-            });
-          }
-        }
         for (const button of panel.querySelectorAll('[data-action="v034-update-property"]')) {
           if (button.disabled) {
             if (button.textContent !== 'SCANNING…') button.textContent = 'SCANNING…';
