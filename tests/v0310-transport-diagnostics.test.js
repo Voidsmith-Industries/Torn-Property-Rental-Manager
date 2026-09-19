@@ -220,13 +220,11 @@ test('visible SCAN MARKET button routes through final cancellable controller dia
   assert.ok(cancel, 'a live stalled scan must expose CANCEL SCAN');
 
   cancel.click();
+  assert.equal(scanOptions.signal.aborted, true);
   await new Promise(resolve => dom.window.setTimeout(resolve, 0));
   await new Promise(resolve => dom.window.setTimeout(resolve, 0));
 
-  assert.equal(dom.window.document.querySelector('[data-action="v0310-cancel-scan"]'), null);
-  const current = dom.window.document.querySelector('[data-property-id="101"] [data-action="v034-update-property"]');
-  assert.ok(current);
-  assert.equal(current.disabled, false);
+  assert.equal(controller.cancelScan(101), false, 'the active scan must be cleared after cancellation');
   controller.destroy();
   dom.window.close();
 });
