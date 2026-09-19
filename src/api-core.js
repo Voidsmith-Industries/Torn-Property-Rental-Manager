@@ -125,6 +125,10 @@
     return Boolean(error && error.name === 'AbortError');
   }
 
+  function isTimeoutError(error) {
+    return /timed out|timeout/i.test(String(error && error.message || error || ''));
+  }
+
   function throwIfAborted(signal) {
     if (signal && signal.aborted) throw abortError();
   }
@@ -252,16 +256,25 @@
         });
       } catch (error) {
         if (isAbortError(error) || signal && signal.aborted) throw abortError();
-        if (tryNumber < 2) {
+        const timedOut = isTimeoutError(error);
+        const maxRetries = timedOut ? 1 : 2;
+        if (tryNumber < maxRetries) {
           const delayMs = 250 * (tryNumber + 1);
           emit(onRequestStatus, {
-            type: 'retry', attempt: tryNumber + 1, maxAttempts: 3, delayMs, status: 0,
-            message: `Network request failed; retrying ${tryNumber + 1} / 2`
+            type: 'retry',
+            attempt: tryNumber + 1,
+            maxAttempts: maxRetries + 1,
+            delayMs,
+            status: 0,
+            message: timedOut
+              ? `Torn API request timed out; retrying ${tryNumber + 1} / ${maxRetries}`
+              : `Network request failed; retrying ${tryNumber + 1} / ${maxRetries}`
           });
           await wait(delayMs, signal);
           return requestJson(url, tryNumber + 1, options);
         }
-        throw new Error(redact(`Torn API network error: ${error && error.message || error}`, apiKey));
+        const prefix = timedOut ? 'Torn API request timed out' : 'Torn API network error';
+        throw new Error(redact(`${prefix}: ${error && error.message || error}`, apiKey));
       }
 
       throwIfAborted(signal);
