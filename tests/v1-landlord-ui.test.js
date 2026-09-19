@@ -91,54 +91,63 @@ test('v1 portfolio UI renders attention/search/lease/market context without subm
 });
 
 
-test('v1 visible Refresh performs property-only sync and never starts rental-market scans', async () => {
-  const dom = new JSDOM('<!doctype html><html><body></body></html>', {
+
+test('v1 observer ignores unrelated Torn DOM churn and does not recompute an existing market distribution', async () => {
+  const dom = new JSDOM('<!doctype html><body><main id="torn-content"></main><aside id="r4g3-prm-panel"><div class="r4g3-prm-header"></div><section class="r4g3-prm-property" data-property-id="7"></section></aside></body>', {
     url: 'https://www.torn.com/properties.php'
   });
-  const calls = { owner: 0, properties: 0, markets: 0 };
-  const rawProperties = [{
-    id: 101,
-    property: { id: 13, name: 'Private Island' },
-    owner: { id: 1 },
-    happy: 4500,
-    status: 'none',
-    modifications: []
-  }];
-
-  const controller = appRuntime.createController({
+  const state = {
+    properties: [{
+      id: 7,
+      propertyTypeId: 13,
+      name: 'Private Island',
+      status: 'rented',
+      rentalPeriodRemaining: 5,
+      rentedBy: { id: 42, name: 'Alice' },
+      costPerDay: 2000000,
+      rentalPeriod: 30,
+      leaseExtension: null
+    }],
+    rows: [{ property: { id: 7 }, quote: quote() }]
+  };
+  let distributionCalls = 0;
+  const portfolioSpy = Object.assign({}, portfolio, {
+    marketDistribution(value) {
+      distributionCalls += 1;
+      return portfolio.marketDistribution(value);
+    }
+  });
+  const base = {
+    getState: () => state,
+    getSettings: () => ({ uiState: 'open' }),
+    render: () => state,
+    open: () => true,
+    openSettings: () => true,
+    destroy: () => true
+  };
+  const controller = portfolioUi.create({
+    baseController: base,
     window: dom.window,
     document: dom.window.document,
     storage: storage(),
-    apiClient: {
-      async fetchCurrentUserId() { calls.owner += 1; return 1; },
-      async fetchOwnedProperties() { calls.properties += 1; return rawProperties; },
-      async scanMarkets() { calls.markets += 1; throw new Error('Refresh must not scan rental markets'); }
-    },
-    propertyCore,
-    marketCore,
-    draftStore: { save(value) { return value; }, loadFor() { return null; }, clear() {} },
-    navigate() {}
+    portfolioCore: portfolioSpy,
+    backupCore: backup,
+    propertyCore
   });
 
-  await new Promise(resolve => dom.window.setTimeout(resolve, 20));
-  const before = Object.assign({}, calls);
-  assert.ok(before.properties >= 1);
-  assert.equal(before.markets, 0);
+  assert.equal(distributionCalls, 1);
 
-  const refresh = dom.window.document.querySelector('[data-action="refresh"]');
-  assert.ok(refresh);
-  assert.match(refresh.title, /property and lease state only/i);
-  refresh.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  const unrelated = dom.window.document.createElement('div');
+  dom.window.document.getElementById('torn-content').appendChild(unrelated);
+  unrelated.appendChild(dom.window.document.createElement('span'));
+  await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+  assert.equal(distributionCalls, 1);
 
-  await new Promise(resolve => dom.window.setTimeout(resolve, 20));
-  assert.equal(calls.properties, before.properties + 1);
-  assert.equal(calls.owner, before.owner + 1);
-  assert.equal(calls.markets, 0);
+  const row = dom.window.document.querySelector('[data-property-id="7"]');
+  row.appendChild(dom.window.document.createElement('span'));
+  await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+  assert.equal(distributionCalls, 1);
 
-  const currentRefresh = dom.window.document.querySelector('[data-action="refresh"]');
-  assert.ok(currentRefresh);
-  assert.equal(currentRefresh.disabled, false);
-  assert.equal(currentRefresh.textContent, 'Refresh');
   controller.destroy();
 });
 
