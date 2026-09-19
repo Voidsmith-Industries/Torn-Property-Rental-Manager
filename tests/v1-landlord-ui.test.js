@@ -6,6 +6,7 @@ const portfolio = require('../src/portfolio-core');
 const backup = require('../src/backup-core');
 const portfolioUi = require('../src/portfolio-ui');
 const propertyCore = require('../src/property-core');
+const marketCore = require('../src/market-core');
 const appRuntime = require('../src/app-runtime');
 const build = require('../scripts/build-userscript');
 
@@ -88,6 +89,59 @@ test('v1 portfolio UI renders attention/search/lease/market context without subm
   assert.equal(typeof controller.importBackupText, 'function');
   controller.destroy();
 });
+
+
+test('v1 visible Refresh performs property-only sync and never starts rental-market scans', async () => {
+  const dom = new JSDOM('<!doctype html><html><body></body></html>', {
+    url: 'https://www.torn.com/properties.php'
+  });
+  const calls = { owner: 0, properties: 0, markets: 0 };
+  const rawProperties = [{
+    id: 101,
+    property: { id: 13, name: 'Private Island' },
+    owner: { id: 1 },
+    happy: 4500,
+    status: 'none',
+    modifications: []
+  }];
+
+  const controller = appRuntime.createController({
+    window: dom.window,
+    document: dom.window.document,
+    storage: storage(),
+    apiClient: {
+      async fetchCurrentUserId() { calls.owner += 1; return 1; },
+      async fetchOwnedProperties() { calls.properties += 1; return rawProperties; },
+      async scanMarkets() { calls.markets += 1; throw new Error('Refresh must not scan rental markets'); }
+    },
+    propertyCore,
+    marketCore,
+    draftStore: { save(value) { return value; }, loadFor() { return null; }, clear() {} },
+    navigate() {}
+  });
+
+  await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+  const before = Object.assign({}, calls);
+  assert.ok(before.properties >= 1);
+  assert.equal(before.markets, 0);
+
+  const refresh = dom.window.document.querySelector('[data-action="refresh"]');
+  assert.ok(refresh);
+  assert.match(refresh.title, /property and lease state only/i);
+  refresh.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+
+  await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+  assert.equal(calls.properties, before.properties + 1);
+  assert.equal(calls.owner, before.owner + 1);
+  assert.equal(calls.markets, 0);
+
+  const currentRefresh = dom.window.document.querySelector('[data-action="refresh"]');
+  assert.ok(currentRefresh);
+  assert.equal(currentRefresh.disabled, false);
+  assert.equal(currentRefresh.textContent, 'Refresh');
+  controller.destroy();
+});
+
 
 test('extension helper points only to Torn native extension page', () => {
   assert.equal(
