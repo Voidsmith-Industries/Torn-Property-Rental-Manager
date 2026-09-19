@@ -5,6 +5,8 @@
 }(typeof globalThis !== 'undefined' ? globalThis : this, function (root) {
   'use strict';
 
+  const API_REQUEST_TIMEOUT_MS = 15000;
+
   function assertApiUrl(value) {
     const url = new URL(String(value), R4G3ApiCore.API_ORIGIN);
     if (url.origin !== R4G3ApiCore.API_ORIGIN || !url.pathname.startsWith('/v2/')) {
@@ -19,7 +21,20 @@
     return error;
   }
 
-  function createApiFetch(windowLike) {
+  function createApiFetch(windowLike, options) {
+    const config = Object.assign({ timeoutMs: API_REQUEST_TIMEOUT_MS }, options || {});
+    const timeoutMs = Math.max(1, Math.floor(Number(config.timeoutMs) || API_REQUEST_TIMEOUT_MS));
+    const setTimer = windowLike && typeof windowLike.setTimeout === 'function'
+      ? windowLike.setTimeout.bind(windowLike)
+      : setTimeout;
+    const clearTimer = windowLike && typeof windowLike.clearTimeout === 'function'
+      ? windowLike.clearTimeout.bind(windowLike)
+      : clearTimeout;
+
+    function timeoutError() {
+      return new Error(`Torn API request timed out after ${timeoutMs} ms`);
+    }
+
     return function apiFetch(value, init) {
       let url;
       try {
@@ -37,12 +52,15 @@
           let settled = false;
           let requestHandle = null;
           let abortListener = null;
+          let watchdogId = null;
 
           function cleanup() {
             if (signal && abortListener && typeof signal.removeEventListener === 'function') {
               signal.removeEventListener('abort', abortListener);
             }
+            if (watchdogId != null) clearTimer(watchdogId);
             abortListener = null;
+            watchdogId = null;
           }
 
           function resolveOnce(valueToResolve) {
@@ -71,7 +89,7 @@
             method: request.method || 'GET',
             url: url.toString(),
             headers: request.headers || {},
-            timeout: 30000,
+            timeout: timeoutMs,
             onload(response) {
               const status = Number(response.status) || 0;
               resolveOnce({
@@ -84,7 +102,7 @@
               });
             },
             ontimeout() {
-              rejectOnce(new Error('Torn API request timed out'));
+              rejectOnce(timeoutError());
             },
             onerror() {
               rejectOnce(new Error('Torn API request failed'));
@@ -93,6 +111,15 @@
               rejectOnce(makeAbortError());
             }
           });
+
+          watchdogId = setTimer(() => {
+            if (settled) return;
+            const error = timeoutError();
+            rejectOnce(error);
+            if (requestHandle && typeof requestHandle.abort === 'function') {
+              try { requestHandle.abort(); } catch (abortFailure) { /* Watchdog timeout remains authoritative. */ }
+            }
+          }, timeoutMs);
 
           if (signal && typeof signal.addEventListener === 'function') {
             signal.addEventListener('abort', abortListener, { once: true });
@@ -104,7 +131,30 @@
       if (!windowLike || typeof windowLike.fetch !== 'function') {
         return Promise.reject(new Error('No supported HTTP transport is available'));
       }
-      return windowLike.fetch(url.toString(), request);
+
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        const watchdogId = setTimer(() => {
+          if (settled) return;
+          settled = true;
+          reject(timeoutError());
+        }, timeoutMs);
+
+        Promise.resolve(windowLike.fetch(url.toString(), request)).then(
+          response => {
+            if (settled) return;
+            settled = true;
+            clearTimer(watchdogId);
+            resolve(response);
+          },
+          error => {
+            if (settled) return;
+            settled = true;
+            clearTimer(watchdogId);
+            reject(error);
+          }
+        );
+      });
     };
   }
 
@@ -546,6 +596,7 @@
   }
 
   return Object.freeze({
+    API_REQUEST_TIMEOUT_MS,
     assertApiUrl,
     createApiFetch,
     findInformationSection,
