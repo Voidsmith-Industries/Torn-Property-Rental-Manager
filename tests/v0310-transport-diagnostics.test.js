@@ -70,6 +70,37 @@ test('createApiFetch aborts the real GM request and rejects AbortError when its 
   }
 });
 
+
+test('createApiFetch watchdog aborts a GM request that never settles', async () => {
+  const originalRequest = global.GM_xmlhttpRequest;
+  const originalApiCore = global.R4G3ApiCore;
+  let abortCalled = false;
+  global.R4G3ApiCore = ApiCore;
+  global.GM_xmlhttpRequest = () => ({
+    abort() { abortCalled = true; }
+  });
+
+  try {
+    const apiFetch = Bootstrap.createApiFetch({
+      setTimeout,
+      clearTimeout,
+      fetch: global.fetch
+    }, { timeoutMs: 5 });
+
+    await assert.rejects(
+      () => apiFetch('https://api.torn.com/v2/market/1/rentals?limit=100', { method: 'GET' }),
+      /timed out/i
+    );
+    assert.equal(abortCalled, true);
+  } finally {
+    if (originalRequest === undefined) delete global.GM_xmlhttpRequest;
+    else global.GM_xmlhttpRequest = originalRequest;
+    if (originalApiCore === undefined) delete global.R4G3ApiCore;
+    else global.R4G3ApiCore = originalApiCore;
+  }
+});
+
+
 test('per-property scan renders retry diagnostics and clears them after the request recovers', async () => {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://www.torn.com/properties.php' });
   const property = PropertyCore.normalizeProperty(rawProperty(), 1);
@@ -125,6 +156,76 @@ test('per-property scan renders retry diagnostics and clears them after the requ
   finishMarket();
   await pending;
   assert.equal(dom.window.document.querySelector('[data-role="v0310-request-status"]'), null);
+  controller.destroy();
+  dom.window.close();
+});
+
+
+test('visible SCAN MARKET button routes through final cancellable controller diagnostics', async () => {
+  const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://www.torn.com/properties.php' });
+  const property = PropertyCore.normalizeProperty(rawProperty(), 1);
+  let scanOptions = null;
+
+  const apiClient = {
+    async fetchCurrentUserId() { return 1; },
+    async fetchOwnedProperties() { return [rawProperty()]; },
+    scanMarkets(properties, options) {
+      scanOptions = options;
+      if (options && typeof options.onRequestStatus === 'function') {
+        options.onRequestStatus({
+          type: 'retry',
+          attempt: 1,
+          maxAttempts: 2,
+          delayMs: 250,
+          status: 0,
+          message: 'Torn API request timed out; retrying 1 / 1'
+        });
+      }
+      return new Promise((resolve, reject) => {
+        const signal = options && options.signal;
+        if (signal && typeof signal.addEventListener === 'function') {
+          signal.addEventListener('abort', () => {
+            const error = new Error('Scan cancelled');
+            error.name = 'AbortError';
+            reject(error);
+          }, { once: true });
+        }
+      });
+    }
+  };
+
+  const controller = AppV0310.createController({
+    window: dom.window,
+    document: dom.window.document,
+    storage: memoryStorage(),
+    apiClient,
+    propertyCore: PropertyCore,
+    marketCore: MarketCore,
+    draftStore: draftStore()
+  });
+  controller.hydrate({ properties: [property], markets: {}, propertyMarkets: {} });
+
+  const scan = dom.window.document.querySelector('[data-property-id="101"] [data-action="v034-update-property"]');
+  assert.ok(scan);
+  scan.click();
+  await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+
+  assert.ok(scanOptions, 'the visible button must reach the final scan wrapper');
+  assert.ok(scanOptions.signal, 'the final wrapper must attach a cancellable AbortSignal');
+  const status = dom.window.document.querySelector('[data-role="v0310-request-status"]');
+  assert.ok(status);
+  assert.match(status.textContent, /timed out/i);
+  const cancel = dom.window.document.querySelector('[data-action="v0310-cancel-scan"]');
+  assert.ok(cancel, 'a live stalled scan must expose CANCEL SCAN');
+
+  cancel.click();
+  await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+  await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+
+  assert.equal(dom.window.document.querySelector('[data-action="v0310-cancel-scan"]'), null);
+  const current = dom.window.document.querySelector('[data-property-id="101"] [data-action="v034-update-property"]');
+  assert.ok(current);
+  assert.equal(current.disabled, false);
   controller.destroy();
   dom.window.close();
 });
