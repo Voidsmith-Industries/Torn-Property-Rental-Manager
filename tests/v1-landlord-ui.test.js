@@ -6,7 +6,6 @@ const portfolio = require('../src/portfolio-core');
 const backup = require('../src/backup-core');
 const portfolioUi = require('../src/portfolio-ui');
 const propertyCore = require('../src/property-core');
-const marketCore = require('../src/market-core');
 const appRuntime = require('../src/app-runtime');
 const build = require('../scripts/build-userscript');
 
