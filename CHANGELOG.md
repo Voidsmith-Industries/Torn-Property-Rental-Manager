@@ -4,13 +4,12 @@ All notable changes to Torn Property Rental Manager are recorded here.
 
 ## [1.0.1] - 2026-09-19
 
-### Refresh hotfix
+### Refresh/update freeze hotfix
 
-- Fixed the visible **Refresh** button bypassing the property-only controller and invoking the legacy full portfolio market scan.
-- Refresh now reloads owned-property and current lease/extension state only.
-- Rental-market calls remain explicit through **SCAN MARKET**, **UPDATE ALL**, or the separate force-market action.
-- Added regression coverage proving a visible Refresh performs zero market scans.
-- Preserved the shared 750 ms / 80-per-minute API scheduler and all v1 landlord features.
+- Fixed the v1 landlord observer reacting to unrelated Torn-page child-list churn during refresh/update activity.
+- Avoided recalculating and sorting an already-rendered trusted market distribution on subsequent manager DOM mutations.
+- Added regression coverage proving unrelated Torn DOM churn is ignored and existing market distributions are not recomputed.
+- Preserved pricing, scan semantics, v1 landlord features and the shared 750 ms / 80-per-minute API scheduler.
 
 ## [1.0.0] - 2026-09-19
 
