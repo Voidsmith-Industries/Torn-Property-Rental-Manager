@@ -204,6 +204,7 @@ test('visible SCAN MARKET button routes through final cancellable controller dia
     draftStore: draftStore()
   });
   controller.hydrate({ properties: [property], markets: {}, propertyMarkets: {} });
+  controller.render();
 
   const scan = dom.window.document.querySelector('[data-property-id="101"] [data-action="v034-update-property"]');
   assert.ok(scan);
