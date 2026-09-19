@@ -10,6 +10,12 @@ Install the current userscript from:
 
 Tampermonkey-compatible update metadata points to the same Voidsmith Industries website distribution. The project is released under the MIT License; see `LICENSE`.
 
+## v1.0.1 Refresh/update freeze hotfix
+
+v1.0.1 fixes a v1.0.0 performance regression where refresh/update DOM churn could repeatedly trigger the landlord enhancement layer and re-sort already-rendered trusted market distributions. On larger saved market datasets this could monopolize the userscript/UI thread and appear to freeze the manager.
+
+The v1 observer now ignores unrelated Torn-page DOM mutations, and an already-rendered market distribution is reused instead of recalculated on every manager mutation. Pricing, market data, scan semantics and the API scheduler are unchanged: request starts remain capped at 80 per rolling minute with at least 750 ms between starts.
+
 ## v1.0.0 landlord operations
 
 v1.0.0 promotes Property Rental Manager from a pricing/listing assistant into a complete browser-local landlord workflow while preserving the proven pricing engine and explicit Torn action boundaries.

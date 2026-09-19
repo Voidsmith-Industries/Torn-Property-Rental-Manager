@@ -1,6 +1,6 @@
 {
   "name": "torn-property-rental-manager",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Standalone Torn landlord manager with attention queues, exact-comparable market pricing, local lease history/backups, and safe native rental actions",
   "scripts": {

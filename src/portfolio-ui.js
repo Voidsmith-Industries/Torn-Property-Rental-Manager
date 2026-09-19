@@ -214,13 +214,14 @@
 
     function ensureDistribution(row, entry) {
       const quote = entry && entry.quote;
-      const d = portfolio.marketDistribution(quote);
       const existing = row.querySelector('[data-role="market-distribution"]');
-      if (!quote || quote.sampleStatus !== 'ok' || !d) {
+      if (!quote || quote.sampleStatus !== 'ok') {
         if (existing) existing.remove();
         return;
       }
       if (existing) return;
+      const d = portfolio.marketDistribution(quote);
+      if (!d) return;
       const box = documentLike.createElement('details');
       box.dataset.role = 'market-distribution';
       Object.assign(box.style, {
@@ -374,8 +375,23 @@
       });
     }
 
+    function managerMutation(records) {
+      for (const record of Array.from(records || [])) {
+        const target = record && record.target;
+        if (target && target.closest && target.closest('#r4g3-prm-panel, #r4g3-prm-settings-window')) return true;
+        for (const node of [...Array.from(record && record.addedNodes || []), ...Array.from(record && record.removedNodes || [])]) {
+          if (!node || node.nodeType !== 1) continue;
+          if (node.matches && node.matches('#r4g3-prm-panel, #r4g3-prm-settings-window')) return true;
+          if (node.querySelector && node.querySelector('#r4g3-prm-panel, #r4g3-prm-settings-window')) return true;
+        }
+      }
+      return false;
+    }
+
     if (windowLike.MutationObserver && (documentLike.body || documentLike.documentElement)) {
-      observer = new windowLike.MutationObserver(schedule);
+      observer = new windowLike.MutationObserver(records => {
+        if (managerMutation(records)) schedule();
+      });
       observer.observe(documentLike.body || documentLike.documentElement, { childList: true, subtree: true });
     }
 

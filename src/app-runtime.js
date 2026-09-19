@@ -34,7 +34,7 @@
   }
 
   return Object.freeze(Object.assign({}, baseApp, {
-    RUNTIME_VERSION: '1.0.0',
+    RUNTIME_VERSION: '1.0.1',
     OBSERVER_MODE: 'multiplexed',
     createController
   }));

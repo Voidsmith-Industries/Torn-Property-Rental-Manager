@@ -38,7 +38,7 @@ test('v1 build includes landlord modules and exact runtime identity', () => {
   assert.ok(build.sourceFiles.includes('src/portfolio-core.js'));
   assert.ok(build.sourceFiles.includes('src/backup-core.js'));
   assert.ok(build.sourceFiles.includes('src/portfolio-ui.js'));
-  assert.equal(appRuntime.RUNTIME_VERSION, '1.0.0');
+  assert.equal(appRuntime.RUNTIME_VERSION, '1.0.1');
 });
 
 test('v1 portfolio UI renders attention/search/lease/market context without submitting Torn actions', () => {
@@ -88,6 +88,68 @@ test('v1 portfolio UI renders attention/search/lease/market context without subm
   assert.equal(typeof controller.importBackupText, 'function');
   controller.destroy();
 });
+
+
+
+test('v1 observer ignores unrelated Torn DOM churn and does not recompute an existing market distribution', async () => {
+  const dom = new JSDOM('<!doctype html><body><main id="torn-content"></main><aside id="r4g3-prm-panel"><div class="r4g3-prm-header"></div><section class="r4g3-prm-property" data-property-id="7"></section></aside></body>', {
+    url: 'https://www.torn.com/properties.php'
+  });
+  const state = {
+    properties: [{
+      id: 7,
+      propertyTypeId: 13,
+      name: 'Private Island',
+      status: 'rented',
+      rentalPeriodRemaining: 5,
+      rentedBy: { id: 42, name: 'Alice' },
+      costPerDay: 2000000,
+      rentalPeriod: 30,
+      leaseExtension: null
+    }],
+    rows: [{ property: { id: 7 }, quote: quote() }]
+  };
+  let distributionCalls = 0;
+  const portfolioSpy = Object.assign({}, portfolio, {
+    marketDistribution(value) {
+      distributionCalls += 1;
+      return portfolio.marketDistribution(value);
+    }
+  });
+  const base = {
+    getState: () => state,
+    getSettings: () => ({ uiState: 'open' }),
+    render: () => state,
+    open: () => true,
+    openSettings: () => true,
+    destroy: () => true
+  };
+  const controller = portfolioUi.create({
+    baseController: base,
+    window: dom.window,
+    document: dom.window.document,
+    storage: storage(),
+    portfolioCore: portfolioSpy,
+    backupCore: backup,
+    propertyCore
+  });
+
+  assert.equal(distributionCalls, 1);
+
+  const unrelated = dom.window.document.createElement('div');
+  dom.window.document.getElementById('torn-content').appendChild(unrelated);
+  unrelated.appendChild(dom.window.document.createElement('span'));
+  await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+  assert.equal(distributionCalls, 1);
+
+  const row = dom.window.document.querySelector('[data-property-id="7"]');
+  row.appendChild(dom.window.document.createElement('span'));
+  await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+  assert.equal(distributionCalls, 1);
+
+  controller.destroy();
+});
+
 
 test('extension helper points only to Torn native extension page', () => {
   assert.equal(
