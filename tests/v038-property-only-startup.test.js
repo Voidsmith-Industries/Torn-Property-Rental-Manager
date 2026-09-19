@@ -65,8 +65,6 @@ test('startup property sync loads only verified owned properties and never scans
   }
 });
 
-
-
 test('legacy automatic-page-update preference cannot trigger an automatic rental-market scan', async () => {
   assert.equal(typeof Bootstrap.runInitialUpdate, 'function');
   const storage = memoryStorage();
