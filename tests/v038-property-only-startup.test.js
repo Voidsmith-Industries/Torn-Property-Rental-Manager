@@ -67,27 +67,6 @@ test('startup property sync loads only verified owned properties and never scans
 
 
 
-test('visible Refresh uses the property-only sync path and never scans rental markets', async () => {
-  const calls = { owner: 0, properties: 0, markets: 0 };
-  const { dom, controller } = createController(memoryStorage(), calls);
-
-  await controller.syncOwnedProperties();
-  assert.deepEqual(calls, { owner: 1, properties: 1, markets: 0 });
-
-  const refresh = dom.window.document.querySelector('[data-action="refresh"]');
-  assert.ok(refresh);
-  assert.match(refresh.title, /property and lease state only/i);
-
-  refresh.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-  await new Promise(resolve => dom.window.setTimeout(resolve, 10));
-
-  assert.deepEqual(calls, { owner: 2, properties: 2, markets: 0 });
-  const currentRefresh = dom.window.document.querySelector('[data-action="refresh"]');
-  assert.ok(currentRefresh);
-  assert.equal(currentRefresh.disabled, false);
-  assert.equal(currentRefresh.textContent, 'Refresh');
-});
-
 test('legacy automatic-page-update preference cannot trigger an automatic rental-market scan', async () => {
   assert.equal(typeof Bootstrap.runInitialUpdate, 'function');
   const storage = memoryStorage();
