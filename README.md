@@ -10,6 +10,12 @@ Install the current userscript from:
 
 Tampermonkey-compatible update metadata points to the same Voidsmith Industries website distribution. The project is released under the MIT License; see `LICENSE`.
 
+## v1.0.1 Refresh hotfix
+
+v1.0.1 fixes a refresh regression in v1.0.0. The visible **Refresh** control now performs the intended property-only sync: owned-property, renter, lease and extension state are refreshed without starting rental-market scans.
+
+Market data remains deliberately user-triggered through **SCAN MARKET** for one property or **UPDATE ALL** for a bulk scan. The shared API scheduler remains capped at 80 request starts per rolling minute with at least 750 ms between starts.
+
 ## v1.0.0 landlord operations
 
 v1.0.0 promotes Property Rental Manager from a pricing/listing assistant into a complete browser-local landlord workflow while preserving the proven pricing engine and explicit Torn action boundaries.
