@@ -249,6 +249,37 @@ test('reuses fresh rental cache and force checks Torn before reusing an unchange
   assert.equal(forced.fromCache, true);
 });
 
+
+test('stalled Torn requests retry once on timeout and then fail closed with diagnostics', async () => {
+  let calls = 0;
+  const statuses = [];
+  const client = ApiCore.createClient({
+    apiKey: 'k',
+    fetchImpl: async () => {
+      calls += 1;
+      throw new Error('Torn API request timed out after 5 ms');
+    },
+    sleep: async () => {},
+    scheduler: { run: fn => fn() },
+    storage: memoryStorage()
+  });
+
+  await assert.rejects(
+    () => client.fetchRentalMarket(1, {
+      force: true,
+      onRequestStatus(entry) { statuses.push(entry); }
+    }),
+    /timed out/i
+  );
+
+  assert.equal(calls, 2, 'a timeout gets one bounded retry, not an indefinite retry loop');
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].type, 'retry');
+  assert.equal(statuses[0].maxAttempts, 2);
+  assert.match(statuses[0].message, /timed out/i);
+});
+
+
 test('redacts API key from thrown errors', async () => {
   const client = ApiCore.createClient({
     apiKey: 'super-secret',
