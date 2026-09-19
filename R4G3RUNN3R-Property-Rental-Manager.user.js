@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         R4G3RUNN3R Property Rental Manager
 // @namespace    https://voidsmithindustries.com/torn/
-// @version      1.0.1
+// @version      1.0.2
 // @description  Manage Torn rentals with attention queues, transparent market pricing, local lease history/backups, and safe native actions.
 // @author       R4G3RUNN3R
 // @license      MIT
@@ -620,6 +620,10 @@
     return Boolean(error && error.name === 'AbortError');
   }
 
+  function isTimeoutError(error) {
+    return /timed out|timeout/i.test(String(error && error.message || error || ''));
+  }
+
   function throwIfAborted(signal) {
     if (signal && signal.aborted) throw abortError();
   }
@@ -747,16 +751,25 @@
         });
       } catch (error) {
         if (isAbortError(error) || signal && signal.aborted) throw abortError();
-        if (tryNumber < 2) {
+        const timedOut = isTimeoutError(error);
+        const maxRetries = timedOut ? 1 : 2;
+        if (tryNumber < maxRetries) {
           const delayMs = 250 * (tryNumber + 1);
           emit(onRequestStatus, {
-            type: 'retry', attempt: tryNumber + 1, maxAttempts: 3, delayMs, status: 0,
-            message: `Network request failed; retrying ${tryNumber + 1} / 2`
+            type: 'retry',
+            attempt: tryNumber + 1,
+            maxAttempts: maxRetries + 1,
+            delayMs,
+            status: 0,
+            message: timedOut
+              ? `Torn API request timed out; retrying ${tryNumber + 1} / ${maxRetries}`
+              : `Network request failed; retrying ${tryNumber + 1} / ${maxRetries}`
           });
           await wait(delayMs, signal);
           return requestJson(url, tryNumber + 1, options);
         }
-        throw new Error(redact(`Torn API network error: ${error && error.message || error}`, apiKey));
+        const prefix = timedOut ? 'Torn API request timed out' : 'Torn API network error';
+        throw new Error(redact(`${prefix}: ${error && error.message || error}`, apiKey));
       }
 
       throwIfAborted(signal);
@@ -6154,6 +6167,19 @@
     function ensureCardMeta(row, propertyId) {
       const controls = row && row.querySelector && row.querySelector('[data-role="v034-card-controls"]');
       if (!controls) return;
+
+      const id = Number(propertyId);
+      const scanButton = controls.querySelector('[data-action="v034-update-property"]');
+      if (scanButton && scanButton.dataset.v0310Bound !== '1') {
+        scanButton.dataset.v0310Bound = '1';
+        scanButton.addEventListener('click', event => {
+          if (event && typeof event.preventDefault === 'function') event.preventDefault();
+          if (event && typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+          else if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
+          if (!activeScans.has(id)) updateProperty(id).catch(() => {});
+        }, true);
+      }
+
       let updated = controls.querySelector('[data-role="v034-last-updated"]');
       if (!updated) {
         updated = documentLike.createElement('small');
@@ -6165,7 +6191,16 @@
       const updatedText = `Property checked: ${formattedTime(propertyCheckedAt, propertyId)} · Market checked: ${formattedTime(marketCheckedAt, propertyId)}`;
       if (updated.textContent !== updatedText) updated.textContent = updatedText;
 
-      const active = activeScans.get(Number(propertyId));
+      const active = activeScans.get(id);
+      if (scanButton) {
+        scanButton.disabled = Boolean(active);
+        const label = active ? 'SCANNING…' : 'SCAN MARKET';
+        if (scanButton.textContent !== label) scanButton.textContent = label;
+        scanButton.title = active
+          ? 'Rental-market scan in progress'
+          : 'Refresh this property and scan only its matching Torn rental market';
+      }
+
       let cancel = controls.querySelector('[data-action="v0310-cancel-scan"]');
       let requestStatus = controls.querySelector('[data-role="v0310-request-status"]');
       if (!active) {
@@ -6474,7 +6509,7 @@
   }
 
   return Object.freeze(Object.assign({}, baseApp, {
-    RUNTIME_VERSION: '1.0.1',
+    RUNTIME_VERSION: '1.0.2',
     OBSERVER_MODE: 'multiplexed',
     createController
   }));
@@ -6488,6 +6523,8 @@
   if (root) root.R4G3PropertyRentalBootstrap = api;
 }(typeof globalThis !== 'undefined' ? globalThis : this, function (root) {
   'use strict';
+
+  const API_REQUEST_TIMEOUT_MS = 15000;
 
   function assertApiUrl(value) {
     const url = new URL(String(value), R4G3ApiCore.API_ORIGIN);
@@ -6503,7 +6540,20 @@
     return error;
   }
 
-  function createApiFetch(windowLike) {
+  function createApiFetch(windowLike, options) {
+    const config = Object.assign({ timeoutMs: API_REQUEST_TIMEOUT_MS }, options || {});
+    const timeoutMs = Math.max(1, Math.floor(Number(config.timeoutMs) || API_REQUEST_TIMEOUT_MS));
+    const setTimer = windowLike && typeof windowLike.setTimeout === 'function'
+      ? windowLike.setTimeout.bind(windowLike)
+      : setTimeout;
+    const clearTimer = windowLike && typeof windowLike.clearTimeout === 'function'
+      ? windowLike.clearTimeout.bind(windowLike)
+      : clearTimeout;
+
+    function timeoutError() {
+      return new Error(`Torn API request timed out after ${timeoutMs} ms`);
+    }
+
     return function apiFetch(value, init) {
       let url;
       try {
@@ -6521,12 +6571,15 @@
           let settled = false;
           let requestHandle = null;
           let abortListener = null;
+          let watchdogId = null;
 
           function cleanup() {
             if (signal && abortListener && typeof signal.removeEventListener === 'function') {
               signal.removeEventListener('abort', abortListener);
             }
+            if (watchdogId != null) clearTimer(watchdogId);
             abortListener = null;
+            watchdogId = null;
           }
 
           function resolveOnce(valueToResolve) {
@@ -6555,7 +6608,7 @@
             method: request.method || 'GET',
             url: url.toString(),
             headers: request.headers || {},
-            timeout: 30000,
+            timeout: timeoutMs,
             onload(response) {
               const status = Number(response.status) || 0;
               resolveOnce({
@@ -6568,7 +6621,7 @@
               });
             },
             ontimeout() {
-              rejectOnce(new Error('Torn API request timed out'));
+              rejectOnce(timeoutError());
             },
             onerror() {
               rejectOnce(new Error('Torn API request failed'));
@@ -6577,6 +6630,15 @@
               rejectOnce(makeAbortError());
             }
           });
+
+          watchdogId = setTimer(() => {
+            if (settled) return;
+            const error = timeoutError();
+            rejectOnce(error);
+            if (requestHandle && typeof requestHandle.abort === 'function') {
+              try { requestHandle.abort(); } catch (abortFailure) { /* Watchdog timeout remains authoritative. */ }
+            }
+          }, timeoutMs);
 
           if (signal && typeof signal.addEventListener === 'function') {
             signal.addEventListener('abort', abortListener, { once: true });
@@ -6588,7 +6650,30 @@
       if (!windowLike || typeof windowLike.fetch !== 'function') {
         return Promise.reject(new Error('No supported HTTP transport is available'));
       }
-      return windowLike.fetch(url.toString(), request);
+
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        const watchdogId = setTimer(() => {
+          if (settled) return;
+          settled = true;
+          reject(timeoutError());
+        }, timeoutMs);
+
+        Promise.resolve(windowLike.fetch(url.toString(), request)).then(
+          response => {
+            if (settled) return;
+            settled = true;
+            clearTimer(watchdogId);
+            resolve(response);
+          },
+          error => {
+            if (settled) return;
+            settled = true;
+            clearTimer(watchdogId);
+            reject(error);
+          }
+        );
+      });
     };
   }
 
@@ -7030,6 +7115,7 @@
   }
 
   return Object.freeze({
+    API_REQUEST_TIMEOUT_MS,
     assertApiUrl,
     createApiFetch,
     findInformationSection,

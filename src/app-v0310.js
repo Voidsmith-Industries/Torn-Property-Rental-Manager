@@ -136,6 +136,19 @@
     function ensureCardMeta(row, propertyId) {
       const controls = row && row.querySelector && row.querySelector('[data-role="v034-card-controls"]');
       if (!controls) return;
+
+      const id = Number(propertyId);
+      const scanButton = controls.querySelector('[data-action="v034-update-property"]');
+      if (scanButton && scanButton.dataset.v0310Bound !== '1') {
+        scanButton.dataset.v0310Bound = '1';
+        scanButton.addEventListener('click', event => {
+          if (event && typeof event.preventDefault === 'function') event.preventDefault();
+          if (event && typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+          else if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
+          if (!activeScans.has(id)) updateProperty(id).catch(() => {});
+        }, true);
+      }
+
       let updated = controls.querySelector('[data-role="v034-last-updated"]');
       if (!updated) {
         updated = documentLike.createElement('small');
@@ -147,7 +160,16 @@
       const updatedText = `Property checked: ${formattedTime(propertyCheckedAt, propertyId)} · Market checked: ${formattedTime(marketCheckedAt, propertyId)}`;
       if (updated.textContent !== updatedText) updated.textContent = updatedText;
 
-      const active = activeScans.get(Number(propertyId));
+      const active = activeScans.get(id);
+      if (scanButton) {
+        scanButton.disabled = Boolean(active);
+        const label = active ? 'SCANNING…' : 'SCAN MARKET';
+        if (scanButton.textContent !== label) scanButton.textContent = label;
+        scanButton.title = active
+          ? 'Rental-market scan in progress'
+          : 'Refresh this property and scan only its matching Torn rental market';
+      }
+
       let cancel = controls.querySelector('[data-action="v0310-cancel-scan"]');
       let requestStatus = controls.querySelector('[data-role="v0310-request-status"]');
       if (!active) {

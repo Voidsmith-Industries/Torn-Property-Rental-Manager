@@ -10,6 +10,12 @@ Install the current userscript from:
 
 Tampermonkey-compatible update metadata points to the same Voidsmith Industries website distribution. The project is released under the MIT License; see `LICENSE`.
 
+## v1.0.2 Market-scan stall hotfix
+
+v1.0.2 fixes a live regression where a per-property market scan could remain at the pre-first-page **35%** state if the Torn request transport never settled cleanly. The request transport now has an independent **15-second watchdog** in addition to the userscript-manager timeout, timeout failures receive one bounded retry, and the visible **SCAN MARKET** control is routed through the final cancellable scan controller so retry diagnostics and **CANCEL SCAN** are available on the actual button the user presses.
+
+The existing API budget is unchanged: at most 80 request starts per rolling minute, at least 750 ms between starts, at most two changed-market page workers, and the existing 60-second Torn rate-limit cooldown.
+
 ## v1.0.1 Refresh/update freeze hotfix
 
 v1.0.1 fixes a v1.0.0 performance regression where refresh/update DOM churn could repeatedly trigger the landlord enhancement layer and re-sort already-rendered trusted market distributions. On larger saved market datasets this could monopolize the userscript/UI thread and appear to freeze the manager.
