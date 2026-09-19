@@ -2,6 +2,16 @@
 
 All notable changes to Torn Property Rental Manager are recorded here.
 
+## [1.0.2] - 2026-09-19
+
+### Market-scan stall hotfix
+
+- Added an independent 15-second Torn request watchdog so a transport that never settles cannot leave a market scan stuck indefinitely at the pre-first-page 35% state.
+- Timeout failures now receive one bounded retry and emit an explicit timeout retry diagnostic.
+- Routed the visible per-property **SCAN MARKET** button through the final cancellable controller instead of the older captured click closure.
+- The actual visible scan now exposes final-controller retry status and **CANCEL SCAN** while in flight.
+- Preserved the existing 80-per-minute / 750 ms scheduler, two-worker pagination limit, pricing rules and Torn native-action boundaries.
+
 ## [1.0.1] - 2026-09-19
 
 ### Refresh/update freeze hotfix
