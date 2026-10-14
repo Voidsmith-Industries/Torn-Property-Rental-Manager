@@ -209,21 +209,31 @@
 
     function start() {
       stopped = false;
-      const attached = ensure();
-      const content = documentLike?.querySelector?.('[data-property-id]')?.parentElement;
-      if (content && windowLike?.MutationObserver) {
-        decorationsObserver = new windowLike.MutationObserver(() => onEnsure());
-        decorationsObserver.observe(content, { childList: true, subtree: true });
+      ensure();
+      // Both the manager panel and Torn header are replaced during SPA redraws.
+      // Inspect added nodes only; avoid re-decorating the entire page per mutation.
+      if (windowLike?.MutationObserver && documentLike?.body) {
+        decorationsObserver = new windowLike.MutationObserver((records) => {
+          if (stopped) return;
+          const icon = documentLike.getElementById('r4g3-prm-status-launcher');
+          if (!icon?.isConnected) ensure();
+          const panelAdded = records.some(record => Array.from(record.addedNodes || []).some(node =>
+            node.nodeType === 1 && (node.id === 'r4g3-prm-panel' ||
+              node.querySelector?.('#r4g3-prm-panel'))));
+          if (panelAdded) onEnsure();
+        });
+        decorationsObserver.observe(documentLike.body, { childList: true, subtree: true });
       }
-      if (attached) return true;
-      // Bound startup retries; no full-document mutation observer or floating fallback.
-      let attempts = 0;
-      const attempt = () => {
-        retryId = null;
-        if (stopped || ensure() || ++attempts >= 16) return;
-        if (windowLike && typeof windowLike.setTimeout === 'function') retryId = windowLike.setTimeout(attempt, 500);
-      };
-      if (windowLike && typeof windowLike.setTimeout === 'function') retryId = windowLike.setTimeout(attempt, 500);
+      // Bounded retries cover initial header hydration, not steady-state polling.
+      if (!documentLike.getElementById('r4g3-prm-status-launcher')) {
+        let attempts = 0;
+        const attempt = () => {
+          retryId = null;
+          if (stopped || ensure() || ++attempts >= 16) return;
+          retryId = windowLike?.setTimeout?.(attempt, 500) ?? null;
+        };
+        retryId = windowLike?.setTimeout?.(attempt, 500) ?? null;
+      }
       return true;
     }
 
