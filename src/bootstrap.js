@@ -179,10 +179,12 @@
     const onOpen = typeof config.onOpen === 'function' ? config.onOpen : () => {};
     const onEnsure = typeof config.onEnsure === 'function' ? config.onEnsure : () => {};
     let retryId = null;
+    let decorationsObserver = null;
     let stopped = false;
 
     function ensure() {
       if (stopped || !documentLike || !documentLike.querySelector) return null;
+      onEnsure();
       const bar = documentLike.querySelector('ul[class*="status-icons"], ul[class*="statusIcons"]');
       if (!bar) return null;
       let item = documentLike.getElementById('r4g3-prm-status-launcher');
@@ -202,13 +204,18 @@
         item.appendChild(button);
       }
       if (item.parentNode !== bar) bar.prepend(item);
-      onEnsure();
       return item;
     }
 
     function start() {
       stopped = false;
-      if (ensure()) return true;
+      const attached = ensure();
+      const content = documentLike?.querySelector?.('[data-property-id]')?.parentElement;
+      if (content && windowLike?.MutationObserver) {
+        decorationsObserver = new windowLike.MutationObserver(() => onEnsure());
+        decorationsObserver.observe(content, { childList: true, subtree: true });
+      }
+      if (attached) return true;
       // Bound startup retries; no full-document mutation observer or floating fallback.
       let attempts = 0;
       const attempt = () => {
@@ -222,6 +229,8 @@
 
     function destroy() {
       stopped = true;
+      decorationsObserver?.disconnect();
+      decorationsObserver = null;
       if (retryId !== null && windowLike && typeof windowLike.clearTimeout === 'function') windowLike.clearTimeout(retryId);
       retryId = null;
       const item = documentLike && documentLike.getElementById('r4g3-prm-status-launcher');
