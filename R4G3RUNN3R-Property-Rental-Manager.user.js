@@ -6697,86 +6697,63 @@
     const documentLike = config.document;
     const onOpen = typeof config.onOpen === 'function' ? config.onOpen : () => {};
     const onEnsure = typeof config.onEnsure === 'function' ? config.onEnsure : () => {};
-    let observer = null;
-
-    function makeButton(id, floating) {
-      const button = documentLike.createElement('button');
-      button.id = id;
-      button.type = 'button';
-      button.title = 'Open Property Rental Manager';
-      button.setAttribute('aria-label', 'Open Property Rental Manager');
-      button.style.cursor = 'pointer';
-      button.style.display = 'inline-flex';
-      button.style.alignItems = 'center';
-      button.style.justifyContent = 'center';
-      button.style.gap = '6px';
-      button.style.border = '1px solid rgba(116,255,139,0.55)';
-      button.style.borderRadius = '7px';
-      button.style.background = '#111512';
-      button.style.color = '#74ff8b';
-      button.style.padding = floating ? '9px 11px' : '6px 8px';
-      button.style.fontSize = '12px';
-      button.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M3 11.5 12 4l9 7.5v8a1 1 0 0 1-1 1h-5.5v-6h-5v6H4a1 1 0 0 1-1-1v-8Z"/></svg><span>Rentals</span>';
-      button.addEventListener('click', event => {
-        if (event && typeof event.preventDefault === 'function') event.preventDefault();
-        onOpen();
-      });
-      if (floating) {
-        button.style.position = 'fixed';
-        button.style.right = '14px';
-        button.style.bottom = '76px';
-        button.style.zIndex = '99998';
-        button.style.boxShadow = '0 8px 24px rgba(0,0,0,0.35)';
-      }
-      return button;
-    }
-
-    function finishEnsure(button) {
-      onEnsure();
-      return button;
-    }
+    let retryId = null;
+    let decorationsObserver = null;
+    let stopped = false;
 
     function ensure() {
-      if (!documentLike || !documentLike.body) return null;
-      let sidebar = documentLike.getElementById('r4g3-prm-sidebar-launcher');
-      let floating = documentLike.getElementById('r4g3-prm-floating-launcher');
-      const information = findInformationSection(documentLike);
-
-      if (information) {
-        if (!sidebar || !information.contains(sidebar)) {
-          if (sidebar && sidebar.parentNode) sidebar.remove();
-          sidebar = makeButton('r4g3-prm-sidebar-launcher', false);
-          const host = information.querySelector && information.querySelector('.links,ul,ol') || information;
-          host.appendChild(sidebar);
-        }
-        if (floating && floating.parentNode) floating.remove();
-        return finishEnsure(sidebar);
+      if (stopped || !documentLike || !documentLike.querySelector) return null;
+      onEnsure();
+      const bar = documentLike.querySelector('ul[class*="status-icons"], ul[class*="statusIcons"]');
+      if (!bar) return null;
+      let item = documentLike.getElementById('r4g3-prm-status-launcher');
+      if (!item) {
+        item = documentLike.createElement('li');
+        item.id = 'r4g3-prm-status-launcher';
+        const button = documentLike.createElement('button');
+        button.type = 'button';
+        button.title = 'Open Property Rental Manager';
+        button.setAttribute('aria-label', 'Open Property Rental Manager');
+        button.textContent = '🏠';
+        button.style.cssText = 'cursor:pointer;background:transparent;border:0;min-width:24px;height:24px;padding:0 3px;font-size:20px;line-height:24px';
+        button.addEventListener('click', event => {
+          if (event && typeof event.preventDefault === 'function') event.preventDefault();
+          onOpen();
+        });
+        item.appendChild(button);
       }
-
-      if (sidebar && sidebar.parentNode) sidebar.remove();
-      if (!floating) {
-        floating = makeButton('r4g3-prm-floating-launcher', true);
-        documentLike.body.appendChild(floating);
-      }
-      return finishEnsure(floating);
+      if (item.parentNode !== bar) bar.prepend(item);
+      return item;
     }
 
     function start() {
-      ensure();
-      if (windowLike && windowLike.MutationObserver && documentLike && documentLike.body) {
-        observer = new windowLike.MutationObserver(() => ensure());
-        observer.observe(documentLike.body, { childList: true, subtree: true });
+      stopped = false;
+      const attached = ensure();
+      const content = documentLike?.querySelector?.('[data-property-id]')?.parentElement;
+      if (content && windowLike?.MutationObserver) {
+        decorationsObserver = new windowLike.MutationObserver(() => onEnsure());
+        decorationsObserver.observe(content, { childList: true, subtree: true });
       }
+      if (attached) return true;
+      // Bound startup retries; no full-document mutation observer or floating fallback.
+      let attempts = 0;
+      const attempt = () => {
+        retryId = null;
+        if (stopped || ensure() || ++attempts >= 16) return;
+        if (windowLike && typeof windowLike.setTimeout === 'function') retryId = windowLike.setTimeout(attempt, 500);
+      };
+      if (windowLike && typeof windowLike.setTimeout === 'function') retryId = windowLike.setTimeout(attempt, 500);
       return true;
     }
 
     function destroy() {
-      if (observer) observer.disconnect();
-      observer = null;
-      const sidebar = documentLike && documentLike.getElementById('r4g3-prm-sidebar-launcher');
-      const floating = documentLike && documentLike.getElementById('r4g3-prm-floating-launcher');
-      if (sidebar && sidebar.parentNode) sidebar.remove();
-      if (floating && floating.parentNode) floating.remove();
+      stopped = true;
+      decorationsObserver?.disconnect();
+      decorationsObserver = null;
+      if (retryId !== null && windowLike && typeof windowLike.clearTimeout === 'function') windowLike.clearTimeout(retryId);
+      retryId = null;
+      const item = documentLike && documentLike.getElementById('r4g3-prm-status-launcher');
+      if (item && item.parentNode) item.remove();
     }
 
     return Object.freeze({ ensure, start, destroy });
