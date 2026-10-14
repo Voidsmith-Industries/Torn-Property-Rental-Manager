@@ -142,3 +142,30 @@ test('launcher does not create floating controls when status header is absent', 
   assert.equal(dom.window.document.querySelector('#r4g3-prm-floating-launcher'), null);
   launcher.destroy();
 });
+
+
+test('launcher and rental decorations recover after Torn header and panel redraw', async () => {
+  const dom = new JSDOM('<!doctype html><html><body><header><ul class="status-icons"></ul></header></body></html>', {
+    url: 'https://www.torn.com/properties.php'
+  });
+  let decorated = 0;
+  const launcher = Bootstrap.createLauncher({
+    window: dom.window,
+    document: dom.window.document,
+    onOpen() {},
+    onEnsure() { decorated += 1; }
+  });
+  launcher.start();
+  assert.ok(dom.window.document.querySelector('#r4g3-prm-status-launcher'));
+  dom.window.document.querySelector('header').innerHTML = '<ul class="status-icons"></ul>';
+  await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+  assert.ok(dom.window.document.querySelector('header #r4g3-prm-status-launcher'));
+  const before = decorated;
+  const panel = dom.window.document.createElement('aside');
+  panel.id = 'r4g3-prm-panel';
+  panel.innerHTML = '<section data-property-id="101"></section>';
+  dom.window.document.body.appendChild(panel);
+  await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+  assert.ok(decorated > before, 'newly rendered manager panel should trigger decoration');
+  launcher.destroy();
+});
