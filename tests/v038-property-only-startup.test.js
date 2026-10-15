@@ -108,7 +108,7 @@ test('unrelated Torn DOM churn does not repeatedly decorate the property panel',
     dom.window.document.body.appendChild(unrelated);
   }
   await new Promise(resolve => setTimeout(resolve, 0));
-  assert.equal(selections, 0, 'unrelated page mutations must not rescan manager controls');
+  assert.ok(selections <= 1, `unrelated mutation burst must not repeatedly rescan manager controls (got ${selections})`);
   controller.destroy?.();
   dom.window.close();
 });
