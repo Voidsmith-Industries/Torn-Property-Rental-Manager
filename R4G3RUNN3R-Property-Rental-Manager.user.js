@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         R4G3RUNN3R Property Rental Manager
+// @name         R4G3RUNN3R Property Rental Manager [BETA]
 // @namespace    https://voidsmithindustries.com/torn/
-// @version      1.0.2
+// @version      1.0.3
 // @description  Manage Torn rentals with attention queues, transparent market pricing, local lease history/backups, and safe native actions.
 // @author       R4G3RUNN3R
 // @license      MIT
@@ -5415,7 +5415,24 @@
     }
 
     if (typeof windowLike.MutationObserver === 'function') {
-      observer = new windowLike.MutationObserver(() => scheduleEnhance());
+      observer = new windowLike.MutationObserver(records => {
+        // Only newly mounted manager panels or property rows need decoration.
+        // Unrelated Torn DOM traffic must not rescan every property card.
+        for (const record of records) {
+          if (record.type !== 'childList') continue;
+          for (const node of record.addedNodes || []) {
+            if (!node || node.nodeType !== 1) continue;
+            const panel = '[id="r4g3-prm-panel"]';
+            const rows = '[data-property-id]';
+            if (node.matches?.(panel) || node.querySelector?.(panel) ||
+                (record.target?.closest?.(panel) &&
+                 (node.matches?.(rows) || node.querySelector?.(rows)))) {
+              scheduleEnhance();
+              return;
+            }
+          }
+        }
+      });
       observer.observe(documentLike.body || documentLike.documentElement, { childList: true, subtree: true });
     }
 
@@ -6313,7 +6330,24 @@
     }
 
     if (typeof windowLike.MutationObserver === 'function' && (documentLike.body || documentLike.documentElement)) {
-      observer = new windowLike.MutationObserver(() => scheduleEnhance());
+      observer = new windowLike.MutationObserver(records => {
+        // Only newly mounted manager panels or property rows need decoration.
+        // Unrelated Torn DOM traffic must not rescan every property card.
+        for (const record of records) {
+          if (record.type !== 'childList') continue;
+          for (const node of record.addedNodes || []) {
+            if (!node || node.nodeType !== 1) continue;
+            const panel = '[id="r4g3-prm-panel"]';
+            const rows = '[data-property-id]';
+            if (node.matches?.(panel) || node.querySelector?.(panel) ||
+                (record.target?.closest?.(panel) &&
+                 (node.matches?.(rows) || node.querySelector?.(rows)))) {
+              scheduleEnhance();
+              return;
+            }
+          }
+        }
+      });
       observer.observe(documentLike.body || documentLike.documentElement, { childList: true, subtree: true });
     }
 
