@@ -4292,7 +4292,7 @@
       header.style.borderBottom = `1px solid ${colors.border}`;
       const title = header.querySelector('[data-role="drag-handle"]');
       if (title) {
-        title.textContent = 'Property Rental Manager';
+        title.textContent = 'Property Rental Manager [BETA]';
         title.style.color = colors.accent;
         title.style.fontSize = '14px';
       }
