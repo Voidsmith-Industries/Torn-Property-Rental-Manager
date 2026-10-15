@@ -40,7 +40,7 @@ const appRuntimeSources = [
 
 function metadata() {
   return `// ==UserScript==
-// @name         R4G3RUNN3R Property Rental Manager
+// @name         R4G3RUNN3R Property Rental Manager [BETA]
 // @namespace    https://voidsmithindustries.com/torn/
 // @version      ${packageJson.version}
 // @description  Manage Torn rentals with attention queues, transparent market pricing, local lease history/backups, and safe native actions.
