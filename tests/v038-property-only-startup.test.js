@@ -89,3 +89,26 @@ test('settings explain that owned properties are automatic and market scans are 
   assert.match(note.textContent, /SCAN MARKET/i);
   assert.match(note.textContent, /UPDATE ALL/i);
 });
+
+test('unrelated Torn DOM churn does not repeatedly decorate the property panel', async () => {
+  const calls = { owner: 0, properties: 0, markets: 0 };
+  const { dom, controller } = createController(memoryStorage(), calls);
+  await controller.syncOwnedProperties();
+  const panel = dom.window.document.querySelector('#r4g3-prm-panel');
+  assert.ok(panel);
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  let selections = 0;
+  const original = panel.querySelectorAll.bind(panel);
+  panel.querySelectorAll = (...args) => { selections += 1; return original(...args); };
+
+  for (let i = 0; i < 150; i += 1) {
+    const unrelated = dom.window.document.createElement('div');
+    unrelated.textContent = 'Torn unrelated update ' + i;
+    dom.window.document.body.appendChild(unrelated);
+  }
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.ok(selections <= 1, `unrelated mutation burst must not repeatedly rescan manager controls (got ${selections})`);
+  controller.destroy?.();
+  dom.window.close();
+});

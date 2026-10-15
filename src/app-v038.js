@@ -119,7 +119,27 @@
     }
 
     if (typeof windowLike.MutationObserver === 'function' && (documentLike.body || documentLike.documentElement)) {
-      observer = new windowLike.MutationObserver(() => scheduleEnhance());
+      observer = new windowLike.MutationObserver((records) => {
+        // Ignore unrelated Torn DOM churn and our own label/text mutations.
+        // Only additions of manager panels or manager controls need decoration.
+        for (const record of records) {
+          if (record.type !== 'childList') continue;
+          for (const node of record.addedNodes || []) {
+            if (!node || node.nodeType !== 1) continue;
+            const owned = '[id="r4g3-prm-panel"],[id="r4g3-prm-settings-window"]';
+            const controls = '[data-action="v034-update-property"],[data-role="v034-update-settings"]';
+            if (node.matches?.(owned) || node.querySelector?.(owned)) {
+              scheduleEnhance();
+              return;
+            }
+            if (record.target?.closest?.(owned) &&
+                (node.matches?.(controls) || node.querySelector?.(controls))) {
+              scheduleEnhance();
+              return;
+            }
+          }
+        }
+      });
       observer.observe(documentLike.body || documentLike.documentElement, { childList: true, subtree: true });
     }
 
