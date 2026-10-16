@@ -169,3 +169,43 @@ test('stable v0.4.0 runtime boots the real controller stack with one app-level n
   controller.destroy();
   dom.window.close();
 });
+
+test('shipped runtime ignores unrelated Torn mutation storms without redundant panel scans', async () => {
+  const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://www.torn.com/properties.php' });
+  const controller = AppRuntime.createController({
+    window: dom.window,
+    document: dom.window.document,
+    storage: memoryStorage(),
+    apiClient: {
+      async fetchCurrentUserId() { return 1; },
+      async fetchOwnedProperties() { return [rawProperty()]; },
+      async scanMarkets() { return {}; }
+    },
+    propertyCore: PropertyCore,
+    marketCore: MarketCore,
+    draftStore: draftStore()
+  });
+  try {
+    await controller.syncOwnedProperties();
+    const panel = dom.window.document.getElementById('r4g3-prm-panel');
+    assert.ok(panel);
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    let scans = 0;
+    const originalQuery = panel.querySelectorAll.bind(panel);
+    panel.querySelectorAll = (...args) => {
+      scans += 1;
+      return originalQuery(...args);
+    };
+    for (let i = 0; i < 150; i += 1) {
+      const div = dom.window.document.createElement('div');
+      div.textContent = 'unrelated Torn update ' + i;
+      dom.window.document.body.appendChild(div);
+    }
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.ok(scans <= 1, 'shipped runtime must not repeatedly scan panels for unrelated DOM updates: ' + scans);
+  } finally {
+    controller.destroy();
+    dom.window.close();
+  }
+});

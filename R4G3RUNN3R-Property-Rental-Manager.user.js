@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         R4G3RUNN3R Property Rental Manager
+// @name         R4G3RUNN3R Property Rental Manager [BETA]
 // @namespace    https://voidsmithindustries.com/torn/
-// @version      1.0.2
+// @version      1.0.3
 // @description  Manage Torn rentals with attention queues, transparent market pricing, local lease history/backups, and safe native actions.
 // @author       R4G3RUNN3R
 // @license      MIT
@@ -4292,7 +4292,7 @@
       header.style.borderBottom = `1px solid ${colors.border}`;
       const title = header.querySelector('[data-role="drag-handle"]');
       if (title) {
-        title.textContent = 'Property Rental Manager';
+        title.textContent = 'Property Rental Manager [BETA]';
         title.style.color = colors.accent;
         title.style.fontSize = '14px';
       }
@@ -5415,7 +5415,24 @@
     }
 
     if (typeof windowLike.MutationObserver === 'function') {
-      observer = new windowLike.MutationObserver(() => scheduleEnhance());
+      observer = new windowLike.MutationObserver(records => {
+        // Only newly mounted manager panels or property rows need decoration.
+        // Unrelated Torn DOM traffic must not rescan every property card.
+        for (const record of records) {
+          if (record.type !== 'childList') continue;
+          for (const node of record.addedNodes || []) {
+            if (!node || node.nodeType !== 1) continue;
+            const panel = '[id="r4g3-prm-panel"]';
+            const rows = '[data-property-id]';
+            if (node.matches?.(panel) || node.querySelector?.(panel) ||
+                (record.target?.closest?.(panel) &&
+                 (node.matches?.(rows) || node.querySelector?.(rows)))) {
+              scheduleEnhance();
+              return;
+            }
+          }
+        }
+      });
       observer.observe(documentLike.body || documentLike.documentElement, { childList: true, subtree: true });
     }
 
@@ -5781,7 +5798,27 @@
     }
 
     if (typeof windowLike.MutationObserver === 'function' && (documentLike.body || documentLike.documentElement)) {
-      observer = new windowLike.MutationObserver(() => scheduleEnhance());
+      observer = new windowLike.MutationObserver((records) => {
+        // Ignore unrelated Torn DOM churn and our own label/text mutations.
+        // Only additions of manager panels or manager controls need decoration.
+        for (const record of records) {
+          if (record.type !== 'childList') continue;
+          for (const node of record.addedNodes || []) {
+            if (!node || node.nodeType !== 1) continue;
+            const owned = '[id="r4g3-prm-panel"],[id="r4g3-prm-settings-window"]';
+            const controls = '[data-action="v034-update-property"],[data-role="v034-update-settings"]';
+            if (node.matches?.(owned) || node.querySelector?.(owned)) {
+              scheduleEnhance();
+              return;
+            }
+            if (record.target?.closest?.(owned) &&
+                (node.matches?.(controls) || node.querySelector?.(controls))) {
+              scheduleEnhance();
+              return;
+            }
+          }
+        }
+      });
       observer.observe(documentLike.body || documentLike.documentElement, { childList: true, subtree: true });
     }
 
@@ -6293,7 +6330,24 @@
     }
 
     if (typeof windowLike.MutationObserver === 'function' && (documentLike.body || documentLike.documentElement)) {
-      observer = new windowLike.MutationObserver(() => scheduleEnhance());
+      observer = new windowLike.MutationObserver(records => {
+        // Only newly mounted manager panels or property rows need decoration.
+        // Unrelated Torn DOM traffic must not rescan every property card.
+        for (const record of records) {
+          if (record.type !== 'childList') continue;
+          for (const node of record.addedNodes || []) {
+            if (!node || node.nodeType !== 1) continue;
+            const panel = '[id="r4g3-prm-panel"]';
+            const rows = '[data-property-id]';
+            if (node.matches?.(panel) || node.querySelector?.(panel) ||
+                (record.target?.closest?.(panel) &&
+                 (node.matches?.(rows) || node.querySelector?.(rows)))) {
+              scheduleEnhance();
+              return;
+            }
+          }
+        }
+      });
       observer.observe(documentLike.body || documentLike.documentElement, { childList: true, subtree: true });
     }
 
@@ -6509,7 +6563,7 @@
   }
 
   return Object.freeze(Object.assign({}, baseApp, {
-    RUNTIME_VERSION: '1.0.2',
+    RUNTIME_VERSION: '1.0.3',
     OBSERVER_MODE: 'multiplexed',
     createController
   }));
