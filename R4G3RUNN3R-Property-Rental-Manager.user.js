@@ -6735,11 +6735,17 @@
         decorationsObserver = new windowLike.MutationObserver((records) => {
           if (stopped) return;
           const icon = documentLike.getElementById('r4g3-prm-status-launcher');
-          if (!icon?.isConnected) ensure();
+          if (!icon?.isConnected && documentLike.querySelector('ul[class*="status-icons"], ul[class*="statusIcons"]')) ensure();
           const panelAdded = records.some(record => Array.from(record.addedNodes || []).some(node =>
             node.nodeType === 1 && (node.id === 'r4g3-prm-panel' ||
               node.querySelector?.('#r4g3-prm-panel'))));
-          if (panelAdded) onEnsure();
+          // Existing rental actions are updated in place as text nodes. They
+          // also need redecoration, not just newly inserted whole panels.
+          const rentalEdited = records.some(record =>
+            record.type === 'childList' && record.target?.nodeType === 1 &&
+            (record.target.matches?.('[data-action="set-price"],[data-action="list-property"]') ||
+              record.target.closest?.('[data-property-id]')));
+          if (panelAdded || rentalEdited) onEnsure();
         });
         decorationsObserver.observe(documentLike.body, { childList: true, subtree: true });
       }
