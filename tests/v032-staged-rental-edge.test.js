@@ -123,3 +123,30 @@ test('launcher mutation hook reapplies staged rental labels after the manager re
 
   launcher.destroy();
 });
+
+
+test('TUI-001: asynchronously inserted rental rows receive staged labels', async () => {
+  const dom = new JSDOM('<!doctype html><html><body><div id="r4g3-prm-panel"></div><ul class="status-icons"></ul></body></html>', {
+    url: 'https://www.torn.com/properties.php'
+  });
+  const launcher = Bootstrap.createLauncher({
+    window: dom.window,
+    document: dom.window.document,
+    onOpen() {},
+    onEnsure() {
+      Bootstrap.decorateRentalActions({
+        window: dom.window,
+        document: dom.window.document,
+        canListProperty: () => false
+      });
+    }
+  });
+  launcher.start();
+  const panel = dom.window.document.getElementById('r4g3-prm-panel');
+  panel.insertAdjacentHTML('beforeend',
+    '<div data-property-id="101"><button data-action="set-price">SET PRICE</button><button data-action="list-property">LIST PROPERTY</button></div>');
+  await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+  assert.equal(panel.querySelector('[data-action="set-price"]').textContent, 'PREPARE RENTAL');
+  launcher.destroy();
+  dom.window.close();
+});
