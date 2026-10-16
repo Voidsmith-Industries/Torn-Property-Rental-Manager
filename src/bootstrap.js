@@ -223,9 +223,11 @@
           // Existing rental actions are updated in place as text nodes. They
           // also need redecoration, not just newly inserted whole panels.
           const rentalEdited = records.some(record =>
-            record.type === 'childList' && record.target?.nodeType === 1 &&
-            (record.target.matches?.('[data-action="set-price"],[data-action="list-property"]') ||
-              record.target.closest?.('[data-property-id]')));
+            record.type === 'childList' && (
+              record.target?.closest?.('[data-property-id]') ||
+              Array.from(record.addedNodes || []).some(node => node.nodeType === 1 &&
+                (node.matches?.('[data-property-id]') || node.querySelector?.('[data-property-id]')))
+            ));
           if (panelAdded || rentalEdited) onEnsure();
         });
         decorationsObserver.observe(documentLike.body, { childList: true, subtree: true });
