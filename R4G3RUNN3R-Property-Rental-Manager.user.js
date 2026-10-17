@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         R4G3RUNN3R Property Rental Manager [BETA]
 // @namespace    https://voidsmithindustries.com/torn/
-// @version      1.0.3
+// @version      1.0.4
 // @description  Manage Torn rentals with attention queues, transparent market pricing, local lease history/backups, and safe native actions.
 // @author       R4G3RUNN3R
 // @license      MIT
