@@ -106,10 +106,10 @@ test('lease lister never submits automatically merely because a verified form is
   assert.equal(clicks, 0);
 });
 
-test('launcher mounts inside Torn Information section and opens the controller', () => {
-  const dom = new JSDOM(`<!doctype html><html><body>
-    <section id="sidebar-information"><h4>Information</h4><div class="links"></div></section>
-  </body></html>`, { url: 'https://www.torn.com/properties.php' });
+test('launcher mounts only in Torn status icon bar and opens the controller', () => {
+  const dom = new JSDOM('<!doctype html><html><body><ul class="status-icons"></ul></body></html>', {
+    url: 'https://www.torn.com/properties.php'
+  });
   let opened = 0;
   const launcher = Bootstrap.createLauncher({
     window: dom.window,
@@ -117,18 +117,19 @@ test('launcher mounts inside Torn Information section and opens the controller',
     onOpen() { opened += 1; }
   });
 
-  launcher.ensure();
-  const button = dom.window.document.querySelector('#r4g3-prm-sidebar-launcher');
-  assert.ok(button);
-  assert.ok(dom.window.document.querySelector('#sidebar-information').contains(button));
+  const item = launcher.ensure();
+  assert.ok(item);
+  assert.equal(item.id, 'r4g3-prm-status-launcher');
+  assert.ok(dom.window.document.querySelector('ul.status-icons').contains(item));
+  assert.equal(item.querySelector('button').textContent, '🏠');
   assert.equal(dom.window.document.querySelector('#r4g3-prm-floating-launcher'), null);
-
-  button.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  item.querySelector('button').click();
   assert.equal(opened, 1);
   launcher.destroy();
+  assert.equal(dom.window.document.querySelector('#r4g3-prm-status-launcher'), null);
 });
 
-test('launcher provides a floating fallback when Torn Information section is unavailable', () => {
+test('launcher does not create floating controls when status header is absent', () => {
   const dom = new JSDOM('<!doctype html><html><body><main>Properties</main></body></html>', {
     url: 'https://www.torn.com/properties.php'
   });
@@ -137,9 +138,34 @@ test('launcher provides a floating fallback when Torn Information section is una
     document: dom.window.document,
     onOpen() {}
   });
-
-  launcher.ensure();
-  assert.ok(dom.window.document.querySelector('#r4g3-prm-floating-launcher'));
-  launcher.destroy();
+  assert.equal(launcher.ensure(), null);
   assert.equal(dom.window.document.querySelector('#r4g3-prm-floating-launcher'), null);
+  launcher.destroy();
+});
+
+
+test('launcher and rental decorations recover after Torn header and panel redraw', async () => {
+  const dom = new JSDOM('<!doctype html><html><body><header><ul class="status-icons"></ul></header></body></html>', {
+    url: 'https://www.torn.com/properties.php'
+  });
+  let decorated = 0;
+  const launcher = Bootstrap.createLauncher({
+    window: dom.window,
+    document: dom.window.document,
+    onOpen() {},
+    onEnsure() { decorated += 1; }
+  });
+  launcher.start();
+  assert.ok(dom.window.document.querySelector('#r4g3-prm-status-launcher'));
+  dom.window.document.querySelector('header').innerHTML = '<ul class="status-icons"></ul>';
+  await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+  assert.ok(dom.window.document.querySelector('header #r4g3-prm-status-launcher'));
+  const before = decorated;
+  const panel = dom.window.document.createElement('aside');
+  panel.id = 'r4g3-prm-panel';
+  panel.innerHTML = '<section data-property-id="101"></section>';
+  dom.window.document.body.appendChild(panel);
+  await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+  assert.ok(decorated > before, 'newly rendered manager panel should trigger decoration');
+  launcher.destroy();
 });

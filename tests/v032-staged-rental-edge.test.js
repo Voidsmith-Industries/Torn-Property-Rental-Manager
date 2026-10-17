@@ -100,11 +100,13 @@ test('launcher mutation hook reapplies staged rental labels after the manager re
     <div data-property-id="101"><button data-action="set-price">SET PRICE</button><button data-action="list-property">LIST PROPERTY</button></div>
   </body></html>`, { url: 'https://www.torn.com/properties.php' });
 
+  let decorations = 0;
   const launcher = Bootstrap.createLauncher({
     window: dom.window,
     document: dom.window.document,
     onOpen() {},
     onEnsure() {
+      decorations++;
       Bootstrap.decorateRentalActions({
         window: dom.window,
         document: dom.window.document,
@@ -120,6 +122,51 @@ test('launcher mutation hook reapplies staged rental labels after the manager re
   prepare.textContent = 'SET PRICE';
   await new Promise(resolve => dom.window.setTimeout(resolve, 0));
   assert.equal(prepare.textContent, 'PREPARE RENTAL');
+  const settled = decorations;
+  await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+  assert.equal(decorations, settled, 'observer must not recursively redecorate its own changes');
 
   launcher.destroy();
+});
+
+
+test('TUI-001: asynchronously inserted rental rows receive staged labels', async () => {
+  const dom = new JSDOM('<!doctype html><html><body><div id="r4g3-prm-panel"></div><ul class="status-icons"></ul></body></html>', {
+    url: 'https://www.torn.com/properties.php'
+  });
+  const launcher = Bootstrap.createLauncher({
+    window: dom.window,
+    document: dom.window.document,
+    onOpen() {},
+    onEnsure() {
+      Bootstrap.decorateRentalActions({
+        window: dom.window,
+        document: dom.window.document,
+        canListProperty: () => false
+      });
+    }
+  });
+  launcher.start();
+  const panel = dom.window.document.getElementById('r4g3-prm-panel');
+  panel.insertAdjacentHTML('beforeend',
+    '<div data-property-id="101"><button data-action="set-price">SET PRICE</button><button data-action="list-property">LIST PROPERTY</button></div>');
+  await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+  assert.equal(panel.querySelector('[data-action="set-price"]').textContent, 'PREPARE RENTAL');
+  launcher.destroy();
+  dom.window.close();
+});
+
+
+test('combined header replacement and rental mutation', async () => {
+  const dom = new JSDOM('<body><ul class="status-icons"></ul><div id="r4g3-prm-panel"></div></body>', {url:'https://www.torn.com/properties.php'});
+  const doc=dom.window.document;
+  const launcher=Bootstrap.createLauncher({window:dom.window,document:doc,onEnsure(){Bootstrap.decorateRentalActions({window:dom.window,document:doc});}});
+  launcher.start();
+  const next=doc.createElement('ul');next.className='status-icons';
+  doc.querySelector('ul').replaceWith(next);
+  doc.querySelector('#r4g3-prm-panel').innerHTML='<div data-property-id="33"><button data-action="set-price">SET PRICE</button><button data-action="list-property">LIST PROPERTY</button></div>';
+  await new Promise(ok=>dom.window.setTimeout(ok,0));
+  assert.ok(next.querySelector('#r4g3-prm-status-launcher'));
+  assert.equal(doc.querySelector('[data-action="set-price"]').textContent,'PREPARE RENTAL');
+  launcher.destroy();dom.window.close();
 });
