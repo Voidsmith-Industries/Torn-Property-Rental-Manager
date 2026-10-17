@@ -155,3 +155,18 @@ test('TUI-001: asynchronously inserted rental rows receive staged labels', async
   launcher.destroy();
   dom.window.close();
 });
+
+
+test('combined header replacement and rental mutation', async () => {
+  const dom = new JSDOM('<body><ul class="status-icons"></ul><div id="r4g3-prm-panel"></div></body>', {url:'https://www.torn.com/properties.php'});
+  const doc=dom.window.document;
+  const launcher=Bootstrap.createLauncher({window:dom.window,document:doc,onEnsure(){Bootstrap.decorateRentalActions({window:dom.window,document:doc});}});
+  launcher.start();
+  const next=doc.createElement('ul');next.className='status-icons';
+  doc.querySelector('ul').replaceWith(next);
+  doc.querySelector('#r4g3-prm-panel').innerHTML='<div data-property-id="33"><button data-action="set-price">SET PRICE</button><button data-action="list-property">LIST PROPERTY</button></div>';
+  await new Promise(ok=>dom.window.setTimeout(ok,0));
+  assert.ok(next.querySelector('#r4g3-prm-status-launcher'));
+  assert.equal(doc.querySelector('[data-action="set-price"]').textContent,'PREPARE RENTAL');
+  launcher.destroy();dom.window.close();
+});
