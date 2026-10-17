@@ -10,6 +10,10 @@ Install the current userscript from:
 
 Tampermonkey-compatible update metadata points to the same Voidsmith Industries website distribution. The project is released under the MIT License; see `LICENSE`.
 
+## v1.0.4 native Torn header launcher
+
+This beta update puts the Property Rental Manager launcher in Torn's native header status area and improves recovery after page redraws. Rental listings still require explicit user verification and submission.
+
 ## v1.0.2 Market-scan stall hotfix
 
 v1.0.2 fixes a live regression where a per-property market scan could remain at the pre-first-page **35%** state if the Torn request transport never settled cleanly. The request transport now has an independent **15-second watchdog** in addition to the userscript-manager timeout, timeout failures receive one bounded retry, and the visible **SCAN MARKET** control is routed through the final cancellable scan controller so retry diagnostics and **CANCEL SCAN** are available on the actual button the user presses.

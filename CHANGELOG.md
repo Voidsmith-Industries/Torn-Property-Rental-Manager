@@ -2,6 +2,20 @@
 
 All notable changes to Torn Property Rental Manager are recorded here.
 
+## [1.0.4] - 2026-10-17
+
+### Torn header launcher
+
+- Introduced a native status icon launcher with Torn SPA header recovery.
+- Retained explicit rental confirmation and staged-value verification.
+- Hardened observer decoration against reentrant DOM changes, with combined-redraw regression tests.
+
+## [1.0.3] - 2026-10-15
+
+### Beta stabilization
+
+- Preserved the verified market scan and rental preparation behavior.
+
 ## [1.0.2] - 2026-09-19
 
 ### Market-scan stall hotfix
