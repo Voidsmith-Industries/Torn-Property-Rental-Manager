@@ -6781,6 +6781,7 @@
     }
 
     function start() {
+      if (decorationsObserver) return true;
       stopped = false;
       ensure();
       // Both the manager panel and Torn header are replaced during SPA redraws.
@@ -6789,19 +6790,27 @@
         decorationsObserver = new windowLike.MutationObserver((records) => {
           if (stopped) return;
           const icon = documentLike.getElementById('r4g3-prm-status-launcher');
-          if (!icon?.isConnected && documentLike.querySelector('ul[class*="status-icons"], ul[class*="statusIcons"]')) ensure();
+          const needsLauncher = !icon?.isConnected &&
+            Boolean(documentLike.querySelector('ul[class*="status-icons"], ul[class*="statusIcons"]'));
           const panelAdded = records.some(record => Array.from(record.addedNodes || []).some(node =>
             node.nodeType === 1 && (node.id === 'r4g3-prm-panel' ||
               node.querySelector?.('#r4g3-prm-panel'))));
-          // Existing rental actions are updated in place as text nodes. They
-          // also need redecoration, not just newly inserted whole panels.
           const rentalEdited = records.some(record =>
             record.type === 'childList' && (
               record.target?.closest?.('[data-property-id]') ||
               Array.from(record.addedNodes || []).some(node => node.nodeType === 1 &&
                 (node.matches?.('[data-property-id]') || node.querySelector?.('[data-property-id]')))
             ));
-          if (panelAdded || rentalEdited) onEnsure();
+          if (!needsLauncher && !panelAdded && !rentalEdited) return;
+          // Ignore our own synchronous label and status mutations. Otherwise
+          // decorating a row re-triggers this observer forever in some browsers.
+          decorationsObserver.disconnect();
+          try {
+            if (needsLauncher) ensure();
+            else onEnsure();
+          } finally {
+            if (!stopped) decorationsObserver.observe(documentLike.body, { childList: true, subtree: true });
+          }
         });
         decorationsObserver.observe(documentLike.body, { childList: true, subtree: true });
       }
