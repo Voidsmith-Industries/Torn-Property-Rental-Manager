@@ -100,11 +100,13 @@ test('launcher mutation hook reapplies staged rental labels after the manager re
     <div data-property-id="101"><button data-action="set-price">SET PRICE</button><button data-action="list-property">LIST PROPERTY</button></div>
   </body></html>`, { url: 'https://www.torn.com/properties.php' });
 
+  let decorations = 0;
   const launcher = Bootstrap.createLauncher({
     window: dom.window,
     document: dom.window.document,
     onOpen() {},
     onEnsure() {
+      decorations++;
       Bootstrap.decorateRentalActions({
         window: dom.window,
         document: dom.window.document,
@@ -120,6 +122,9 @@ test('launcher mutation hook reapplies staged rental labels after the manager re
   prepare.textContent = 'SET PRICE';
   await new Promise(resolve => dom.window.setTimeout(resolve, 0));
   assert.equal(prepare.textContent, 'PREPARE RENTAL');
+  const settled = decorations;
+  await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+  assert.equal(decorations, settled, 'observer must not recursively redecorate its own changes');
 
   launcher.destroy();
 });
